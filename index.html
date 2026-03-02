@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grocery List</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🛒 Shared Grocery List</h1>
+    </header>
+
+    <section class="form-section" id="formSection">
+      <h2>Add Item</h2>
+      <form id="groceryForm">
+        <div class="form-group">
+          <label for="name">Your Name *</label>
+          <input type="text" id="name" name="name" required placeholder="Enter your name">
+        </div>
+
+        <div class="form-group">
+          <label for="item">Item Name *</label>
+          <input type="text" id="item" name="item" required placeholder="What do you need?">
+        </div>
+
+        <div class="form-group">
+          <label for="quantity">Quantity</label>
+          <input type="text" id="quantity" name="quantity" placeholder="e.g., 2, 500g, 1 liter">
+        </div>
+
+        <div class="form-group">
+          <label for="substituteFor">Substitute For</label>
+          <input type="text" id="substituteFor" name="substituteFor" placeholder="If this replaces another item">
+        </div>
+
+        <div class="form-group">
+          <label for="imageUrl">Image URL</label>
+          <input type="url" id="imageUrl" name="imageUrl" placeholder="https://example.com/image.jpg">
+        </div>
+
+        <div class="form-group">
+          <label for="ahUrl">AH Link</label>
+          <input type="url" id="ahUrl" name="ahUrl" placeholder="https://ah.nl/product/...">
+        </div>
+
+        <button type="submit" class="btn btn-primary">Add to List</button>
+      </form>
+      <div id="formMessage" class="message hidden"></div>
+    </section>
+
+    <section class="list-section">
+      <div class="list-header">
+        <h2>Items</h2>
+        <div class="tabs">
+          <button class="tab active" data-status="open">Open</button>
+          <button class="tab" data-status="closed">Closed</button>
+          <button class="tab" data-status="deleted">Deleted</button>
+        </div>
+      </div>
+
+      <div class="actions-bar">
+        <div class="export-actions">
+          <button class="btn btn-secondary" id="printBtn">🖨️ Print</button>
+          <button class="btn btn-secondary" id="copyBtn">📋 Copy as Text</button>
+        </div>
+        <div class="bulk-actions">
+          <button class="btn btn-warning" id="deleteClosedBtn">Delete Closed Items</button>
+          <button class="btn btn-danger" id="deleteAllBtn">Delete All Items</button>
+        </div>
+      </div>
+
+      <div id="listMessage" class="message hidden"></div>
+      <div id="itemsList" class="items-list">
+        <p class="loading">Loading items...</p>
+      </div>
+    </section>
+  </div>
+
+  <div id="adminModal" class="modal hidden">
+    <div class="modal-content">
+      <h3>Admin Verification</h3>
+      <p>Enter admin code to continue:</p>
+      <input type="password" id="adminCodeInput" placeholder="Admin code">
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="adminCancelBtn">Cancel</button>
+        <button class="btn btn-primary" id="adminConfirmBtn">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
