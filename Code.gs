@@ -268,12 +268,11 @@ function rowToItem(row) {
 }
 
 function isValidUrl(string) {
-  try {
-    const url = new URL(string);
-    return url.protocol === 'http:' || url.protocol === 'https:';
-  } catch (e) {
-    return false;
-  }
+  if (!string) return false;
+  
+  // Simple check: just verify it starts with http:// or https://
+  const trimmed = string.trim();
+  return trimmed.startsWith('http://') || trimmed.startsWith('https://');
 }
 
 function setupSheet() {

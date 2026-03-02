@@ -8,11 +8,11 @@
   let pendingAdminAction = null;
 
   const form = document.getElementById('groceryForm');
+  const submitBtn = document.getElementById('submitBtn');
   const formMessage = document.getElementById('formMessage');
   const itemsList = document.getElementById('itemsList');
   const listMessage = document.getElementById('listMessage');
   const tabs = document.querySelectorAll('.tab');
-  const printBtn = document.getElementById('printBtn');
   const copyBtn = document.getElementById('copyBtn');
   const deleteClosedBtn = document.getElementById('deleteClosedBtn');
   const deleteAllBtn = document.getElementById('deleteAllBtn');
@@ -27,7 +27,6 @@
     
     form.addEventListener('submit', handleSubmit);
     tabs.forEach(tab => tab.addEventListener('click', handleTabClick));
-    printBtn.addEventListener('click', handlePrint);
     copyBtn.addEventListener('click', handleCopyText);
     deleteClosedBtn.addEventListener('click', () => requestAdminAction('deleteClosed'));
     deleteAllBtn.addEventListener('click', () => requestAdminAction('deleteAll'));
@@ -134,6 +133,7 @@
 
     Object.keys(data).forEach(key => data[key] === undefined && delete data[key]);
 
+    setButtonLoading(submitBtn, true);
     try {
       await apiRequest('?action=add', {
         body: data
@@ -147,6 +147,8 @@
       }
     } catch (error) {
       showMessage(formMessage, error.message, 'error');
+    } finally {
+      setButtonLoading(submitBtn, false);
     }
   }
 
@@ -160,7 +162,7 @@
   }
 
   async function loadItems() {
-    itemsList.innerHTML = '<p class="loading">Loading items...</p>';
+    itemsList.innerHTML = '<div class="loading"><div class="spinner"></div><p>Loading items...</p></div>';
 
     try {
       const data = await apiRequest(`?action=list&status=${currentStatus}`);
@@ -216,7 +218,7 @@
     let actionsHtml = '';
     if (item.status === 'open') {
       actionsHtml = `
-        <button class="btn btn-sm btn-secondary close-btn" data-id="${item.id}">Close</button>
+        <button class="btn btn-sm btn-secondary close-btn" data-id="${item.id}">Mark as Ordered</button>
         <button class="btn btn-sm btn-danger delete-btn" data-id="${item.id}">Delete</button>
       `;
     } else if (item.status === 'closed') {
@@ -298,11 +300,18 @@
     }
   }
 
-  function handlePrint() {
-    window.print();
+  function setButtonLoading(button, isLoading) {
+    if (isLoading) {
+      button.classList.add('loading');
+      button.disabled = true;
+    } else {
+      button.classList.remove('loading');
+      button.disabled = false;
+    }
   }
 
   async function handleCopyText() {
+    setButtonLoading(copyBtn, true);
     try {
       const data = await apiRequest('?action=list&status=open');
       const items = data.items || [];
@@ -329,6 +338,8 @@
       showMessage(listMessage, 'Copied to clipboard!', 'success');
     } catch (error) {
       showMessage(listMessage, 'Failed to copy: ' + error.message, 'error');
+    } finally {
+      setButtonLoading(copyBtn, false);
     }
   }
 
@@ -360,6 +371,12 @@
 
     if (!pendingAdminAction) return;
 
+    const targetBtn = pendingAdminAction.type === 'bulk' 
+      ? (pendingAdminAction.action === 'deleteClosed' ? deleteClosedBtn : deleteAllBtn)
+      : null;
+    
+    if (targetBtn) setButtonLoading(targetBtn, true);
+    
     try {
       if (pendingAdminAction.type === 'bulk') {
         await apiRequest('?action=bulk', {
@@ -377,6 +394,8 @@
       if (error.message.includes('admin')) {
         adminCode = null;
       }
+    } finally {
+      if (targetBtn) setButtonLoading(targetBtn, false);
     }
 
     pendingAdminAction = null;
