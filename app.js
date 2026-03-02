@@ -191,11 +191,19 @@
     itemsList.innerHTML = items.map(item => createItemCard(item)).join('');
 
     itemsList.querySelectorAll('.close-btn').forEach(btn => {
-      btn.addEventListener('click', () => setItemStatus(btn.dataset.id, 'closed'));
+      btn.addEventListener('click', async () => {
+        setButtonLoading(btn, true);
+        await setItemStatus(btn.dataset.id, 'closed');
+        setButtonLoading(btn, false);
+      });
     });
 
     itemsList.querySelectorAll('.reopen-btn').forEach(btn => {
-      btn.addEventListener('click', () => setItemStatus(btn.dataset.id, 'open'));
+      btn.addEventListener('click', async () => {
+        setButtonLoading(btn, true);
+        await setItemStatus(btn.dataset.id, 'open');
+        setButtonLoading(btn, false);
+      });
     });
 
     itemsList.querySelectorAll('.delete-btn').forEach(btn => {
@@ -203,6 +211,14 @@
         console.log('[Event] Individual delete button clicked for item:', btn.dataset.id);
         pendingAdminAction = { type: 'deleteItem', id: btn.dataset.id };
         openAdminModal();
+      });
+    });
+
+    itemsList.querySelectorAll('.add-back-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        setButtonLoading(btn, true);
+        await setItemStatus(btn.dataset.id, 'open');
+        setButtonLoading(btn, false);
       });
     });
   }
@@ -229,13 +245,29 @@
     let actionsHtml = '';
     if (item.status === 'open') {
       actionsHtml = `
-        <button class="btn btn-sm btn-secondary close-btn" data-id="${item.id}">Besteld</button>
-        <button class="btn btn-sm btn-danger delete-btn" data-id="${item.id}">Verwijderen</button>
+        <button class="btn btn-sm btn-secondary close-btn" data-id="${item.id}">
+          <span class="btn-text">Besteld</span>
+          <span class="btn-loader">Bezig...</span>
+        </button>
+        <button class="btn btn-sm btn-danger delete-btn" data-id="${item.id}">
+          <span class="btn-text">Verwijderen</span>
+          <span class="btn-loader">Bezig...</span>
+        </button>
       `;
     } else if (item.status === 'closed') {
       actionsHtml = `
-        <button class="btn btn-sm btn-secondary reopen-btn" data-id="${item.id}">Openen</button>
-        <button class="btn btn-sm btn-danger delete-btn" data-id="${item.id}">Verwijderen</button>
+        <button class="btn btn-sm btn-primary add-back-btn" data-id="${item.id}">
+          <span class="btn-text">Toevoegen</span>
+          <span class="btn-loader">Bezig...</span>
+        </button>
+        <button class="btn btn-sm btn-secondary reopen-btn" data-id="${item.id}">
+          <span class="btn-text">Openen</span>
+          <span class="btn-loader">Bezig...</span>
+        </button>
+        <button class="btn btn-sm btn-danger delete-btn" data-id="${item.id}">
+          <span class="btn-text">Verwijderen</span>
+          <span class="btn-loader">Bezig...</span>
+        </button>
       `;
     }
 
