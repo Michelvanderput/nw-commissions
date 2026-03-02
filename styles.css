@@ -27,6 +27,7 @@
 
 body {
   font-family: 'Poppins', sans-serif;
+  font-weight: 500;
   background: var(--bg);
   color: var(--text);
   line-height: 1.6;
@@ -40,21 +41,27 @@ body {
 }
 
 header {
-  text-align: center;
+  display: flex;
+  gap: 3rem;
   margin-bottom: 2rem;
   padding: 1.5rem 0;
+  padding-top: 0;
+  padding-top: 0;
 }
 
 .logo {
-  max-width: 200px;
+  max-width: 120px;
   height: auto;
   margin-bottom: 1rem;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-weight: 600;
 }
 
 header h1 {
   font-family: 'Epilogue', sans-serif;
   font-size: 1.75rem;
-  font-weight: 700;
   color: var(--secondary);
 }
 
@@ -214,6 +221,9 @@ header h1 {
 .tabs {
   display: flex;
   gap: 0.5rem;
+  border: solid 1px var(--border);
+  border-radius: 0.5rem;
+  padding: 0.5rem;
 }
 
 .tab {
@@ -407,14 +417,18 @@ header h1 {
 @media (min-width: 640px) {
   .container {
     padding: 2rem;
+    max-width: 1200px;
   }
 
   .logo {
-    max-width: 250px;
+    max-width: 200px;
   }
 
-  header h1 {
-    font-size: 2rem;
+  .main-content {
+    display: grid;
+    grid-template-columns: 1fr 1.5fr;
+    gap: 2rem;
+    align-items: start;
   }
 
   .list-header {

@@ -10,97 +10,98 @@
   <div class="container">
     <header>
       <img src="https://www.nexwork.nl/img/Logo_Nexwork_Conclusion.svg" alt="Nexwork" class="logo">
-      <h1>Shared Grocery List</h1>
     </header>
 
-    <section class="form-section" id="formSection">
-      <h2>Add Item</h2>
-      <form id="groceryForm">
-        <div class="form-group">
-          <label for="name">Your Name *</label>
-          <input type="text" id="name" name="name" required placeholder="Enter your name">
-        </div>
+    <div class="main-content">
+      <section class="form-section" id="formSection">
+        <h2>Verzoek voor boodschappen</h2>
+        <form id="groceryForm">
+          <div class="form-group">
+            <label for="name">Je naam *</label>
+            <input type="text" id="name" name="name" required placeholder="Jouw naam">
+          </div>
 
-        <div class="form-group">
-          <label for="item">Item Name *</label>
-          <input type="text" id="item" name="item" required placeholder="What do you need?">
-        </div>
+          <div class="form-group">
+            <label for="item">Product naam *</label>
+            <input type="text" id="item" name="item" required placeholder="Welk product?">
+          </div>
 
-        <div class="form-group">
-          <label for="quantity">Quantity</label>
-          <input type="text" id="quantity" name="quantity" placeholder="e.g., 2, 500g, 1 liter">
-        </div>
+          <div class="form-group">
+            <label for="quantity">Hoeveelheid</label>
+            <input type="text" id="quantity" name="quantity" placeholder="bijvoorbeeld 2 verpakkingen">
+          </div>
 
-        <div class="form-group">
-          <label for="substituteFor">Substitute For</label>
-          <input type="text" id="substituteFor" name="substituteFor" placeholder="If this replaces another item">
-        </div>
+          <div class="form-group">
+            <label for="substituteFor">Vervangt</label>
+            <input type="text" id="substituteFor" name="substituteFor" placeholder="In plaats van iets anders?">
+          </div>
 
-        <div class="form-group">
-          <label for="imageUrl">Image URL</label>
-          <input type="url" id="imageUrl" name="imageUrl" placeholder="https://example.com/image.jpg">
-        </div>
+          <div class="form-group">
+            <label for="imageUrl">Afbeelding url</label>
+            <input type="url" id="imageUrl" name="imageUrl" placeholder="https://example.com/image.jpg">
+          </div>
 
-        <div class="form-group">
-          <label for="ahUrl">AH Link</label>
-          <input type="url" id="ahUrl" name="ahUrl" placeholder="https://ah.nl/product/...">
-        </div>
+          <div class="form-group">
+            <label for="ahUrl">AH link url</label>
+            <input type="url" id="ahUrl" name="ahUrl" placeholder="https://ah.nl/product/...">
+          </div>
 
-        <button type="submit" class="btn btn-primary" id="submitBtn">
-          <span class="btn-text">Add to List</span>
-          <span class="btn-loader hidden">Adding...</span>
-        </button>
-      </form>
-      <div id="formMessage" class="message hidden"></div>
-    </section>
-
-    <section class="list-section">
-      <div class="list-header">
-        <h2>Items</h2>
-        <div class="tabs">
-          <button class="tab active" data-status="open">To Order</button>
-          <button class="tab" data-status="closed">Ordered</button>
-          <button class="tab" data-status="deleted">Deleted</button>
-        </div>
-      </div>
-
-      <div class="actions-bar">
-        <div class="export-actions">
-          <button class="btn btn-secondary" id="copyBtn">
-            <span class="btn-text">📋 Copy as Text</span>
-            <span class="btn-loader hidden">Copying...</span>
+          <button type="submit" class="btn btn-primary" id="submitBtn">
+            <span class="btn-text">Toevoegen aan lijst</span>
+            <span class="btn-loader hidden">Opslaan...</span>
           </button>
-        </div>
-        <div class="bulk-actions">
-          <button class="btn btn-warning" id="deleteClosedBtn">
-            <span class="btn-text">Delete Ordered Items</span>
-            <span class="btn-loader hidden">Deleting...</span>
-          </button>
-          <button class="btn btn-danger" id="deleteAllBtn">
-            <span class="btn-text">Delete All Items</span>
-            <span class="btn-loader hidden">Deleting...</span>
-          </button>
-        </div>
-      </div>
+        </form>
+        <div id="formMessage" class="message hidden"></div>
+      </section>
 
-      <div id="listMessage" class="message hidden"></div>
-      <div id="itemsList" class="items-list">
-        <div class="loading">
-          <div class="spinner"></div>
-          <p>Loading items...</p>
+      <section class="list-section">
+        <div class="list-header">
+          <h2>Boodschappenlijst</h2>
+          <div class="tabs">
+            <button class="tab active" data-status="open">Verzoeken</button>
+            <button class="tab" data-status="closed">Besteld</button>
+            <button class="tab" data-status="deleted">Verwijderd</button>
+          </div>
         </div>
-      </div>
-    </section>
+
+        <div class="actions-bar">
+          <div class="export-actions">
+            <button class="btn btn-secondary" id="copyBtn">
+              <span class="btn-text">📋 Lijst kopieren</span>
+              <span class="btn-loader hidden">Kopieren...</span>
+            </button>
+          </div>
+          <div class="bulk-actions">
+            <button class="btn btn-warning" id="deleteClosedBtn">
+              <span class="btn-text">Verwijder bestelde items</span>
+              <span class="btn-loader hidden">Verwijderen...</span>
+            </button>
+            <button class="btn btn-danger" id="deleteAllBtn">
+              <span class="btn-text">Verwijder alle items</span>
+              <span class="btn-loader hidden">Verwijderen...</span>
+            </button>
+          </div>
+        </div>
+
+        <div id="listMessage" class="message hidden"></div>
+        <div id="itemsList" class="items-list">
+          <div class="loading">
+            <div class="spinner"></div>
+            <p>Lijst laden...</p>
+          </div>
+        </div>
+      </section>
+    </div>
   </div>
 
   <div id="adminModal" class="modal hidden">
     <div class="modal-content">
-      <h3>Admin Verification</h3>
-      <p>Enter admin code to continue:</p>
+      <h3>Admin verificatie</h3>
+      <p>Vul admin code in om verder te gaan:</p>
       <input type="password" id="adminCodeInput" placeholder="Admin code">
       <div class="modal-actions">
-        <button class="btn btn-secondary" id="adminCancelBtn">Cancel</button>
-        <button class="btn btn-primary" id="adminConfirmBtn">Confirm</button>
+        <button class="btn btn-secondary" id="adminCancelBtn">Annuleren</button>
+        <button class="btn btn-primary" id="adminConfirmBtn">Bevestigen</button>
       </div>
     </div>
   </div>
