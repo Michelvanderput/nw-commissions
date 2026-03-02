@@ -133,9 +133,18 @@
           params.append(key, options.body[key]);
         }
       });
+      
+      // Add client info automatically
+      params.append('ip', await getClientIP());
+      params.append('userAgent', navigator.userAgent);
+      
       const separator = url.includes('?') ? '&' : '?';
       url = `${url}${separator}${params.toString()}`;
       console.log('[API] Request params:', options.body);
+    } else {
+      // Add client info for GET requests too
+      const separator = url.includes('?') ? '&' : '?';
+      url = `${url}${separator}ip=${encodeURIComponent(await getClientIP())}&userAgent=${encodeURIComponent(navigator.userAgent)}`;
     }
     
     console.log('[API] Request:', {
@@ -182,6 +191,17 @@
       }
       
       throw error;
+    }
+  }
+
+  async function getClientIP() {
+    try {
+      const response = await fetch('https://api.ipify.org?format=json');
+      const data = await response.json();
+      return data.ip;
+    } catch (error) {
+      console.warn('[Client] Could not fetch IP address:', error);
+      return 'unknown';
     }
   }
 
@@ -582,11 +602,11 @@
       : `<img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.item)}" class="item-image" onerror="this.style.display='none'">`;
 
     const quantityHtml = item.quantity 
-      ? `<span><strong>${escapeHtml(item.quantity)}</strong>x</span>` 
+      ? `<div class="item-quantity"><strong>${escapeHtml(item.quantity)}</strong>x</div>` 
       : '';
 
     const substituteHtml = item.substituteFor 
-      ? `<span>In plaats van ${escapeHtml(item.substituteFor)}</span>` 
+      ? `<div class="item-substitute">In plaats van ${escapeHtml(item.substituteFor)}</div>` 
       : '';
 
     const ahLinkHtml = item.ahUrl 
