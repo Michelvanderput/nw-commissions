@@ -28,8 +28,14 @@
     form.addEventListener('submit', handleSubmit);
     tabs.forEach(tab => tab.addEventListener('click', handleTabClick));
     copyBtn.addEventListener('click', handleCopyText);
-    deleteClosedBtn.addEventListener('click', () => requestAdminAction('deleteClosed'));
-    deleteAllBtn.addEventListener('click', () => requestAdminAction('deleteAll'));
+    deleteClosedBtn.addEventListener('click', () => {
+      console.log('[Event] Delete Closed button clicked');
+      requestAdminAction('deleteClosed');
+    });
+    deleteAllBtn.addEventListener('click', () => {
+      console.log('[Event] Delete All button clicked');
+      requestAdminAction('deleteAll');
+    });
     adminCancelBtn.addEventListener('click', closeAdminModal);
     adminConfirmBtn.addEventListener('click', confirmAdminAction);
     adminCodeInput.addEventListener('keypress', (e) => {
@@ -190,6 +196,7 @@
 
     itemsList.querySelectorAll('.delete-btn').forEach(btn => {
       btn.addEventListener('click', () => {
+        console.log('[Event] Individual delete button clicked for item:', btn.dataset.id);
         pendingAdminAction = { type: 'deleteItem', id: btn.dataset.id };
         openAdminModal();
       });
@@ -280,20 +287,25 @@
   }
 
   async function setItemStatus(id, status) {
+    console.log('[setItemStatus] Called with:', { id, status, hasAdminCode: !!adminCode });
     const requiresAdmin = status === 'deleted';
     
     if (requiresAdmin && !adminCode) {
+      console.log('[setItemStatus] Admin code required, opening modal');
       pendingAdminAction = { type: 'setStatus', id, status };
       openAdminModal();
       return;
     }
 
     try {
+      console.log('[setItemStatus] Making API request:', { id, status, adminCode: requiresAdmin ? adminCode : 'none' });
       await apiRequest('?action=setStatus', {
         body: { id, status, adminCode: requiresAdmin ? adminCode : undefined }
       });
+      console.log('[setItemStatus] API request successful, reloading items');
       loadItems();
     } catch (error) {
+      console.error('[setItemStatus] Error:', error);
       showMessage(listMessage, error.message, 'error');
       if (error.message.includes('admin')) {
         adminCode = null;
@@ -345,7 +357,10 @@
   }
 
   function requestAdminAction(action) {
-    pendingAdminAction = { type: 'bulk', action: action === 'deleteClosed' ? 'deleteClosed' : 'deleteAll' };
+    console.log('[requestAdminAction] Called with:', action);
+    const bulkAction = action === 'deleteClosed' ? 'deleteClosed' : 'deleteAll';
+    console.log('[requestAdminAction] Setting pending action:', { type: 'bulk', action: bulkAction });
+    pendingAdminAction = { type: 'bulk', action: bulkAction };
     openAdminModal();
   }
 
@@ -363,42 +378,62 @@
 
   async function confirmAdminAction() {
     const code = adminCodeInput.value.trim();
+    console.log('[confirmAdminAction] Admin code entered:', code ? '***' : 'empty');
+    
     if (!code) {
+      console.log('[confirmAdminAction] No code entered, returning');
       return;
     }
 
     adminCode = code;
     closeAdminModal();
 
-    if (!pendingAdminAction) return;
+    if (!pendingAdminAction) {
+      console.log('[confirmAdminAction] No pending action, returning');
+      return;
+    }
+
+    console.log('[confirmAdminAction] Processing pending action:', pendingAdminAction);
 
     const targetBtn = pendingAdminAction.type === 'bulk' 
       ? (pendingAdminAction.action === 'deleteClosed' ? deleteClosedBtn : deleteAllBtn)
       : null;
     
-    if (targetBtn) setButtonLoading(targetBtn, true);
+    if (targetBtn) {
+      console.log('[confirmAdminAction] Setting loading on button:', targetBtn.id);
+      setButtonLoading(targetBtn, true);
+    }
     
     try {
       if (pendingAdminAction.type === 'bulk') {
+        console.log('[confirmAdminAction] Making bulk API request:', { action: pendingAdminAction.action, adminCode });
         await apiRequest('?action=bulk', {
           body: { action: pendingAdminAction.action, adminCode }
         });
+        console.log('[confirmAdminAction] Bulk action successful');
         showMessage(listMessage, 'Bulk actie voltooid', 'success');
         loadItems();
       } else if (pendingAdminAction.type === 'setStatus') {
+        console.log('[confirmAdminAction] Calling setItemStatus:', pendingAdminAction);
         await setItemStatus(pendingAdminAction.id, pendingAdminAction.status);
       } else if (pendingAdminAction.type === 'deleteItem') {
+        console.log('[confirmAdminAction] Calling setItemStatus for delete:', pendingAdminAction.id);
         await setItemStatus(pendingAdminAction.id, 'deleted');
       }
     } catch (error) {
+      console.error('[confirmAdminAction] Error:', error);
       showMessage(listMessage, error.message, 'error');
       if (error.message.includes('admin')) {
         adminCode = null;
       }
     } finally {
-      if (targetBtn) setButtonLoading(targetBtn, false);
+      if (targetBtn) {
+        console.log('[confirmAdminAction] Removing loading from button:', targetBtn.id);
+        setButtonLoading(targetBtn, false);
+      }
     }
 
+    console.log('[confirmAdminAction] Clearing pending action');
     pendingAdminAction = null;
   }
 
