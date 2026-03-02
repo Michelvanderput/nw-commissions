@@ -17,18 +17,23 @@
         <h2>Verzoek voor boodschappen</h2>
         <form id="groceryForm">
           <div class="form-group">
-            <label for="name">Je naam *</label>
-            <input type="text" id="name" name="name" required placeholder="Jouw naam">
+            <label for="ahUrl">AH product link *</label>
+            <input type="text" id="ahUrl" name="ahUrl" required placeholder="ah.nl/product/...">
           </div>
 
           <div class="form-group">
             <label for="item">Product naam *</label>
-            <input type="text" id="item" name="item" required placeholder="Welk product?">
+            <input type="text" id="item" name="item" required placeholder="Wordt automatisch ingevuld">
+          </div>
+
+          <div class="form-group">
+            <label for="imageUrl">Afbeelding url (optioneel)</label>
+            <input type="url" id="imageUrl" name="imageUrl" placeholder="Optioneel - handmatig toevoegen">
           </div>
 
           <div class="form-group">
             <label for="quantity">Hoeveelheid</label>
-            <input type="text" id="quantity" name="quantity" placeholder="bijvoorbeeld 2 verpakkingen">
+            <input type="number" id="quantity" name="quantity" min="1" max="10" placeholder="1" value="1">
           </div>
 
           <div class="form-group">
@@ -37,13 +42,8 @@
           </div>
 
           <div class="form-group">
-            <label for="imageUrl">Afbeelding url</label>
-            <input type="url" id="imageUrl" name="imageUrl" placeholder="https://example.com/image.jpg">
-          </div>
-
-          <div class="form-group">
-            <label for="ahUrl">AH link url</label>
-            <input type="url" id="ahUrl" name="ahUrl" placeholder="https://ah.nl/product/...">
+            <label for="name">Jouw naam *</label>
+            <input type="text" id="name" name="name" required placeholder="Jouw naam">
           </div>
 
           <button type="submit" class="btn btn-primary" id="submitBtn">
@@ -64,13 +64,15 @@
           </div>
         </div>
 
-        <div class="actions-bar">
-          <div class="export-actions">
-            <button class="btn btn-secondary" id="copyBtn">
-              <span class="btn-text">📋 Lijst kopieren</span>
-              <span class="btn-loader">Kopieren...</span>
-            </button>
+        <div id="listMessage" class="message hidden"></div>
+        <div id="itemsList" class="items-list">
+          <div class="loading">
+            <div class="spinner"></div>
+            <p>Lijst laden...</p>
           </div>
+        </div>
+
+        <div class="actions-bar">
           <div class="bulk-actions">
             <button class="btn btn-warning" id="deleteClosedBtn">
               <span class="btn-text">Verwijder bestelde items</span>
@@ -80,14 +82,10 @@
               <span class="btn-text">Verwijder alle items</span>
               <span class="btn-loader">Verwijderen...</span>
             </button>
-          </div>
-        </div>
-
-        <div id="listMessage" class="message hidden"></div>
-        <div id="itemsList" class="items-list">
-          <div class="loading">
-            <div class="spinner"></div>
-            <p>Lijst laden...</p>
+          <button class="btn btn-secondary" id="copyBtn">
+            <span class="btn-text">📋 Lijst kopieren</span>
+            <span class="btn-loader">Kopieren...</span>
+          </button>
           </div>
         </div>
       </section>

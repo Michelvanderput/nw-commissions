@@ -4,8 +4,11 @@
   const API_BASE_URL = typeof CONFIG !== 'undefined' ? CONFIG.API_BASE_URL : '';
 
   let currentStatus = 'open';
-  let adminCode = null;
   let pendingAdminAction = null;
+  let adminCode = null;
+  
+  const ADMIN_CODE_STORAGE_KEY = 'grocery_admin_code';
+  const ADMIN_CODE_EXPIRY_DAYS = 30;
 
   const form = document.getElementById('groceryForm');
   const submitBtn = document.getElementById('submitBtn');
@@ -20,6 +23,11 @@
   const adminCodeInput = document.getElementById('adminCodeInput');
   const adminCancelBtn = document.getElementById('adminCancelBtn');
   const adminConfirmBtn = document.getElementById('adminConfirmBtn');
+  
+  // Form fields for auto-fill
+  const ahUrlInput = document.getElementById('ahUrl');
+  const itemInput = document.getElementById('item');
+  const imageUrlInput = document.getElementById('imageUrl');
 
   function init() {
     console.log('[Grocery App] Initializing...');
@@ -44,6 +52,19 @@
     adminConfirmBtn.addEventListener('click', confirmAdminAction);
     adminCodeInput.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') confirmAdminAction();
+    });
+    
+    // Auto-fill when AH URL changes
+    let autoFillTimeout;
+    ahUrlInput.addEventListener('input', (e) => {
+      clearTimeout(autoFillTimeout);
+      const url = e.target.value.trim();
+      
+      if (url.length > 10) { // Only trigger if there's substantial input
+        autoFillTimeout = setTimeout(() => {
+          handleAhUrlInput(url);
+        }, 1000); // Wait 1 second after user stops typing
+      }
     });
 
     loadItems();
@@ -113,37 +134,138 @@
     }, 3000);
   }
 
+  async function handleAhUrlInput(url) {
+    console.log('[Auto-fill] Checking AH URL:', url);
+    
+    // Normalize AH URL
+    let normalizedUrl = url;
+    if (!url.startsWith('http')) {
+      normalizedUrl = 'https://www.ah.nl' + (url.startsWith('/') ? url : '/' + url);
+    }
+    
+    if (!isValidAhUrl(normalizedUrl)) {
+      console.log('[Auto-fill] Invalid AH URL, skipping');
+      return;
+    }
+    
+    // Show loading state
+    ahUrlInput.style.borderColor = 'var(--primary)';
+    
+    try {
+      const extracted = await extractImageFromAhUrl(normalizedUrl);
+      
+      // Auto-fill product name if empty
+      if (!itemInput.value.trim() || itemInput.value.toLowerCase() === 'welk product?') {
+        if (extracted.title) {
+          itemInput.value = extracted.title;
+          console.log('[Auto-fill] Product name filled:', extracted.title);
+        }
+      }
+      
+      // Auto-fill image URL if empty
+      if (!imageUrlInput.value.trim()) {
+        if (extracted.image) {
+          imageUrlInput.value = extracted.image;
+          console.log('[Auto-fill] Image URL filled:', extracted.image);
+        }
+      }
+      
+      // Update the input field with normalized URL
+      ahUrlInput.value = normalizedUrl;
+      
+      // Show success feedback
+      ahUrlInput.style.borderColor = 'var(--success)';
+      setTimeout(() => {
+        ahUrlInput.style.borderColor = '';
+      }, 2000);
+      
+    } catch (error) {
+      console.error('[Auto-fill] Error:', error);
+      ahUrlInput.style.borderColor = 'var(--danger)';
+      setTimeout(() => {
+        ahUrlInput.style.borderColor = '';
+      }, 2000);
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
 
+    // Show loader immediately
+    setButtonLoading(submitBtn, true);
+
     const formData = new FormData(form);
+    let ahUrl = formData.get('ahUrl').trim();
     const data = {
       name: formData.get('name').trim(),
       item: formData.get('item').trim(),
-      quantity: formData.get('quantity').trim() || undefined,
+      quantity: formData.get('quantity') ? parseInt(formData.get('quantity')) : undefined,
       substituteFor: formData.get('substituteFor').trim() || undefined,
       imageUrl: formData.get('imageUrl').trim() || undefined,
-      ahUrl: formData.get('ahUrl').trim() || undefined
+      ahUrl: ahUrl || undefined
     };
 
     if (!data.name || !data.item) {
+      setButtonLoading(submitBtn, false);
       showMessage(formMessage, 'Naam en item zijn verplicht', 'error');
       return;
     }
 
-    if (data.imageUrl && !isValidUrl(data.imageUrl)) {
-      showMessage(formMessage, 'Ongeldige afbeeldings URL', 'error');
+    // Validate quantity range
+    if (data.quantity !== undefined && (data.quantity < 1 || data.quantity > 10)) {
+      setButtonLoading(submitBtn, false);
+      showMessage(formMessage, 'Hoeveelheid moet tussen 1 en 10 zijn', 'error');
       return;
     }
 
-    if (data.ahUrl && !isValidUrl(data.ahUrl)) {
-      showMessage(formMessage, 'Ongeldige AH URL', 'error');
+    // AH URL validation and normalization
+    if (!ahUrl) {
+      setButtonLoading(submitBtn, false);
+      showMessage(formMessage, 'AH link is verplicht', 'error');
       return;
     }
+
+    // Check for duplicates
+    try {
+      const existingData = await apiRequest('?action=list&status=open');
+      const existingItems = existingData.items || [];
+      
+      const duplicateByUrl = existingItems.find(item => item.ahUrl === ahUrl);
+      const duplicateByName = existingItems.find(item => 
+        item.item.toLowerCase() === data.item.toLowerCase()
+      );
+      
+      if (duplicateByUrl) {
+        setButtonLoading(submitBtn, false);
+        showMessage(formMessage, 'Product staat al op de verzoeklijst', 'error');
+        return;
+      }
+      
+      if (duplicateByName) {
+        setButtonLoading(submitBtn, false);
+        showMessage(formMessage, 'Product met dezelfde naam staat al op de verzoeklijst', 'error');
+        return;
+      }
+    } catch (error) {
+      console.error('[handleSubmit] Error checking duplicates:', error);
+      // Continue with submission if duplicate check fails
+    }
+
+    // Normalize AH URL
+    if (!ahUrl.startsWith('http')) {
+      ahUrl = 'https://www.ah.nl' + (ahUrl.startsWith('/') ? ahUrl : '/' + ahUrl);
+    }
+    
+    if (!isValidAhUrl(ahUrl)) {
+      setButtonLoading(submitBtn, false);
+      showMessage(formMessage, 'Ongeldige AH URL. Gebruik een geldige ah.nl link', 'error');
+      return;
+    }
+    
+    data.ahUrl = ahUrl;
 
     Object.keys(data).forEach(key => data[key] === undefined && delete data[key]);
 
-    setButtonLoading(submitBtn, true);
     try {
       await apiRequest('?action=add', {
         body: data
@@ -168,6 +290,95 @@
       return url.protocol === 'http:' || url.protocol === 'https:';
     } catch {
       return false;
+    }
+  }
+
+  function isValidAhUrl(url) {
+    try {
+      const urlObj = new URL(url);
+      return (urlObj.hostname === 'ah.nl' || urlObj.hostname === 'www.ah.nl') && urlObj.protocol === 'https:';
+    } catch {
+      return false;
+    }
+  }
+
+  async function extractImageFromAhUrl(ahUrl) {
+    try {
+      console.log('[extractFromAh] Using URL-based extraction due to scraping restrictions');
+      
+      // Primary method: Extract from URL path (most reliable)
+      let productTitle = null;
+      let imageUrl = null;
+      
+      try {
+        const urlPath = new URL(ahUrl).pathname;
+        const pathParts = urlPath.split('/').filter(part => part.length > 0);
+        
+        if (pathParts.length >= 2) {
+          // Extract product name from path
+          const productNameSlug = pathParts[pathParts.length - 1]; // e.g., old-mother-crispy-chili-in-oil
+          
+          // Convert slug to readable name
+          productTitle = productNameSlug
+            .replace(/-/g, ' ')
+            .replace(/\b\w/g, l => l.toUpperCase());
+          
+          console.log('[extractFromAh] URL extraction:', { productNameSlug, title: productTitle });
+          console.log('[extractFromAh] Image URL cannot be predicted (AH uses internal identifiers)');
+        }
+      } catch (urlError) {
+        console.log('[extractFromAh] URL parsing failed:', urlError);
+      }
+      
+      // Try scraping as fallback (will likely fail but worth a try)
+      if (!productTitle) {
+        console.log('[extractFromAh] Attempting scraping fallback...');
+        try {
+          const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(ahUrl)}`;
+          const response = await fetch(proxyUrl);
+          
+          if (response.ok) {
+            const data = await response.json();
+            const html = data.contents;
+            
+            // Try JSON-LD extraction
+            const jsonLdMatch = html.match(/<script[^>]*type="application\/ld\+json"[^>]*>(.*?)<\/script>/is);
+            if (jsonLdMatch) {
+              try {
+                const jsonLd = JSON.parse(jsonLdMatch[1]);
+                if (jsonLd.name) {
+                  productTitle = jsonLd.name;
+                  console.log('[extractFromAh] JSON-LD fallback worked:', productTitle);
+                }
+                if (jsonLd.image) {
+                  imageUrl = jsonLd.image;
+                  console.log('[extractFromAh] JSON-LD image found:', imageUrl);
+                }
+              } catch (e) {
+                console.log('[extractFromAh] JSON-LD parse failed:', e);
+              }
+            }
+          }
+        } catch (scrapeError) {
+          console.log('[extractFromAh] Scraping fallback failed (expected):', scrapeError.message);
+        }
+      }
+      
+      // Clean up the title if we got it from URL or scraping
+      if (productTitle) {
+        // Clean up common AH title patterns
+        productTitle = productTitle.replace(/\s*-\s*Albert Heijn.*$/i, ''); // Remove " - Albert Heijn" suffix
+        productTitle = productTitle.replace(/\s*\|\s*Albert Heijn.*$/i, ''); // Remove " | Albert Heijn" suffix
+        productTitle = productTitle.replace(/\s+bestellen\s*$/i, ''); // Remove " bestellen" suffix
+        console.log('[extractFromAh] Cleaned title:', productTitle);
+      }
+      
+      console.log('[extractFromAh] Extracted:', { title: productTitle, image: imageUrl });
+      
+      return { title: productTitle, image: imageUrl };
+    } catch (error) {
+      console.error('[extractImageFromAhUrl] Error:', error);
+      return { title: null, image: null };
     }
   }
 
@@ -210,7 +421,22 @@
       btn.addEventListener('click', () => {
         console.log('[Event] Individual delete button clicked for item:', btn.dataset.id);
         pendingAdminAction = { type: 'deleteItem', id: btn.dataset.id };
-        openAdminModal();
+        
+        // Check if we have a stored admin code
+        const storedCode = getStoredAdminCode();
+        if (storedCode) {
+          console.log('[Event] Using stored admin code for delete');
+          adminCode = storedCode;
+          
+          // Show confirmation dialog
+          if (confirm('Weet je zeker dat je dit item wilt verwijderen?')) {
+            executeAdminAction(pendingAdminAction);
+          } else {
+            pendingAdminAction = null;
+          }
+        } else {
+          openAdminModal();
+        }
       });
     });
 
@@ -229,7 +455,7 @@
       : '';
 
     const quantityHtml = item.quantity 
-      ? `<span><strong>${escapeHtml(item.quantity)}</strong></span>` 
+      ? `<span><strong>${escapeHtml(item.quantity)}</strong>x</span>` 
       : '';
 
     const substituteHtml = item.substituteFor 
@@ -392,12 +618,56 @@
     }
   }
 
+  function getStoredAdminCode() {
+    try {
+      const stored = localStorage.getItem(ADMIN_CODE_STORAGE_KEY);
+      if (!stored) return null;
+      
+      const { code, expiry } = JSON.parse(stored);
+      if (Date.now() > expiry) {
+        localStorage.removeItem(ADMIN_CODE_STORAGE_KEY);
+        return null;
+      }
+      
+      return code;
+    } catch (e) {
+      console.error('[getStoredAdminCode] Error:', e);
+      return null;
+    }
+  }
+  
+  function storeAdminCode(code) {
+    try {
+      const expiry = Date.now() + (ADMIN_CODE_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+      localStorage.setItem(ADMIN_CODE_STORAGE_KEY, JSON.stringify({ code, expiry }));
+      console.log('[storeAdminCode] Admin code stored for 30 days');
+    } catch (e) {
+      console.error('[storeAdminCode] Error:', e);
+    }
+  }
+  
   function requestAdminAction(action) {
     console.log('[requestAdminAction] Called with:', action);
     const bulkAction = action === 'deleteClosed' ? 'deleteClosed' : 'deleteAll';
     console.log('[requestAdminAction] Setting pending action:', { type: 'bulk', action: bulkAction });
     pendingAdminAction = { type: 'bulk', action: bulkAction };
-    openAdminModal();
+    
+    // Check if we have a stored admin code
+    const storedCode = getStoredAdminCode();
+    if (storedCode) {
+      console.log('[requestAdminAction] Using stored admin code');
+      adminCode = storedCode;
+      
+      // Show confirmation dialog instead of admin modal
+      const actionName = bulkAction === 'deleteClosed' ? 'bestelde items' : 'alle items';
+      if (confirm(`Weet je zeker dat je ${actionName} wilt verwijderen?`)) {
+        executeAdminAction(pendingAdminAction);
+      } else {
+        pendingAdminAction = null;
+      }
+    } else {
+      openAdminModal();
+    }
   }
 
   function openAdminModal() {
@@ -411,6 +681,58 @@
     adminCodeInput.value = '';
   }
 
+  async function executeAdminAction(actionToExecute) {
+    if (!actionToExecute) {
+      console.log('[executeAdminAction] No action to execute');
+      return;
+    }
+
+    console.log('[executeAdminAction] Processing action:', actionToExecute);
+
+    const targetBtn = actionToExecute.type === 'bulk' 
+      ? (actionToExecute.action === 'deleteClosed' ? deleteClosedBtn : deleteAllBtn)
+      : actionToExecute.type === 'deleteItem' 
+        ? document.querySelector(`.delete-btn[data-id="${actionToExecute.id}"]`)
+        : null;
+
+    if (targetBtn) {
+      setButtonLoading(targetBtn, true);
+    }
+
+    try {
+      if (actionToExecute.type === 'bulk') {
+        console.log('[executeAdminAction] Bulk action:', actionToExecute.action);
+        const endpoint = actionToExecute.action === 'deleteClosed' 
+          ? '?action=deleteClosed' 
+          : '?action=deleteAll';
+        
+        console.log('[executeAdminAction] Calling API with endpoint:', endpoint);
+        await apiRequest(endpoint, {
+          body: { adminCode }
+        });
+        
+        showMessage(listMessage, 'Items verwijderd', 'success');
+        loadItems();
+      } else if (actionToExecute.type === 'deleteItem') {
+        console.log('[executeAdminAction] Delete item:', actionToExecute.id);
+        await apiRequest('?action=setStatus', {
+          body: { id: actionToExecute.id, status: 'deleted', adminCode }
+        });
+        
+        showMessage(listMessage, 'Item verwijderd', 'success');
+        loadItems();
+      }
+    } catch (error) {
+      console.error('[executeAdminAction] Error:', error);
+      showMessage(listMessage, error.message, 'error');
+    } finally {
+      if (targetBtn) {
+        setButtonLoading(targetBtn, false);
+      }
+      pendingAdminAction = null;
+    }
+  }
+  
   async function confirmAdminAction() {
     const code = adminCodeInput.value.trim();
     console.log('[confirmAdminAction] Admin code entered:', code ? '***' : 'empty');
@@ -422,6 +744,9 @@
 
     adminCode = code;
     
+    // Store the admin code for 30 days
+    storeAdminCode(code);
+    
     // Store the action before closing modal
     const actionToExecute = pendingAdminAction;
     closeAdminModal();
@@ -431,47 +756,7 @@
       return;
     }
 
-    console.log('[confirmAdminAction] Processing pending action:', actionToExecute);
-
-    const targetBtn = actionToExecute.type === 'bulk' 
-      ? (actionToExecute.action === 'deleteClosed' ? deleteClosedBtn : deleteAllBtn)
-      : null;
-    
-    if (targetBtn) {
-      console.log('[confirmAdminAction] Setting loading on button:', targetBtn.id);
-      setButtonLoading(targetBtn, true);
-    }
-    
-    try {
-      if (actionToExecute.type === 'bulk') {
-        console.log('[confirmAdminAction] Making bulk API request:', { action: actionToExecute.action, adminCode });
-        await apiRequest('?action=bulk', {
-          body: { action: actionToExecute.action, adminCode }
-        });
-        console.log('[confirmAdminAction] Bulk action successful');
-        showMessage(listMessage, 'Bulk actie voltooid', 'success');
-        loadItems();
-      } else if (actionToExecute.type === 'setStatus') {
-        console.log('[confirmAdminAction] Calling setItemStatus:', actionToExecute);
-        await setItemStatus(actionToExecute.id, actionToExecute.status);
-      } else if (actionToExecute.type === 'deleteItem') {
-        console.log('[confirmAdminAction] Calling setItemStatus for delete:', actionToExecute.id);
-        await setItemStatus(actionToExecute.id, 'deleted');
-      }
-    } catch (error) {
-      console.error('[confirmAdminAction] Error:', error);
-      showMessage(listMessage, error.message, 'error');
-      if (error.message.includes('admin')) {
-        adminCode = null;
-      }
-    } finally {
-      if (targetBtn) {
-        console.log('[confirmAdminAction] Removing loading from button:', targetBtn.id);
-        setButtonLoading(targetBtn, false);
-      }
-    }
-
-    console.log('[confirmAdminAction] Clearing pending action');
+    await executeAdminAction(actionToExecute);
     pendingAdminAction = null;
   }
 
