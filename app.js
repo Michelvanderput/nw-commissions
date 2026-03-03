@@ -615,10 +615,13 @@
 
     const createdAt = formatDate(item.createdAt);
     
-    // Add "Besteld [date]" line for closed items
-    const orderedAtHtml = item.status === 'closed' && item.closedAt 
-      ? `<div class="item-ordered">Besteld ${formatDateOnly(item.closedAt)}</div>` 
-      : '';
+    // Add date line for closed and deleted items
+    let statusDateHtml = '';
+    if (item.status === 'closed' && item.closedAt) {
+      statusDateHtml = `<div class="item-ordered">Besteld ${formatDateOnly(item.closedAt)}</div>`;
+    } else if (item.status === 'deleted' && item.deletedAt) {
+      statusDateHtml = `<div class="item-deleted">Verwijderd ${formatDateOnly(item.deletedAt)}</div>`;
+    }
 
     let actionsHtml = '';
     if (item.status === 'open') {
@@ -645,6 +648,14 @@
           <span class="btn-loader">Bezig...</span>
         </button>
       `;
+    } else if (item.status === 'deleted') {
+      actionsHtml = `
+        <button class="btn btn-sm btn-primary add-back-btn" data-id="${item.id}">
+          <span class="btn-text">Opnieuw bestellen</span>
+          <span class="btn-loader">Bezig...</span>
+        </button>
+        ${ahLinkHtml}
+      `;
     }
 
     return `
@@ -655,7 +666,7 @@
           <div class="item-details">
             ${quantityHtml}
             ${substituteHtml}
-            ${orderedAtHtml}
+            ${statusDateHtml}
           </div>
           <div class="item-meta">
             Toegevoegd door ${escapeHtml(item.name)} • ${createdAt}
