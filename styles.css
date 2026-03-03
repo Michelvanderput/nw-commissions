@@ -305,23 +305,18 @@ h1, h2, h3, h4, h5, h6 {
     }
   }
 
-  #refreshBtn {
-    @media (max-width: 768px) {
-      order: 2;
-      align-self: center;
-      max-width: 200px;
-    }
+  }
 
-    &.loading {
-      // Override default button loading styles
-      padding: 0.5rem 0.75rem !important;
-      min-width: auto !important;
+#refreshBtn {
+  &.loading {
+    // Override default button loading styles
+    padding: 0.5rem 0.75rem !important;
+    min-width: auto !important;
 
-      svg {
-        display: inline-block;
-        animation: spin 0.8s linear infinite;
-        transform-origin: center;
-      }
+    svg {
+      display: inline-block;
+      animation: spin 0.8s linear infinite;
+      transform-origin: center;
     }
   }
 }
