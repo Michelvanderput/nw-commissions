@@ -104,16 +104,18 @@
     
     // Auto-fill when AH URL changes
     let autoFillTimeout;
-    ahUrlInput.addEventListener('input', (e) => {
-      clearTimeout(autoFillTimeout);
-      const url = e.target.value.trim();
-      
-      if (url.length > 10) { // Only trigger if there's substantial input
-        autoFillTimeout = setTimeout(() => {
-          handleAhUrlInput(url);
-        }, 1000); // Wait 1 second after user stops typing
-      }
-    });
+    if (ahUrlInput) {
+      ahUrlInput.addEventListener('input', (e) => {
+        clearTimeout(autoFillTimeout);
+        const url = e.target.value.trim();
+        
+        if (url.length > 10) { // Only trigger if there's substantial input
+          autoFillTimeout = setTimeout(() => {
+            handleAhUrlInput(url);
+          }, 1000); // Wait 1 second after user stops typing
+        }
+      });
+    }
 
     loadItems();
   }
@@ -216,8 +218,6 @@
   }
 
   async function handleAhUrlInput(url) {
-    console.log('[Auto-fill] Checking AH URL:', url);
-    
     // Normalize AH URL
     let normalizedUrl = url;
     if (!url.startsWith('http')) {
@@ -225,7 +225,6 @@
     }
     
     if (!isValidAhUrl(normalizedUrl)) {
-      console.log('[Auto-fill] Invalid AH URL, skipping');
       return;
     }
     
@@ -239,15 +238,6 @@
       if (!itemInput.value.trim() || itemInput.value.toLowerCase() === 'welk product?') {
         if (extracted.title) {
           itemInput.value = extracted.title;
-          console.log('[Auto-fill] Product name filled:', extracted.title);
-        }
-      }
-      
-      // Auto-fill image URL if empty
-      if (!imageUrlInput.value.trim()) {
-        if (extracted.image) {
-          imageUrlInput.value = extracted.image;
-          console.log('[Auto-fill] Image URL filled:', extracted.image);
         }
       }
       
@@ -255,13 +245,17 @@
       ahUrlInput.value = normalizedUrl;
       
       // Show success feedback
-      ahUrlInput.style.borderColor = 'var(--success)';
+      if (extracted.title) {
+        ahUrlInput.style.borderColor = 'var(--success)';
+      } else {
+        ahUrlInput.style.borderColor = 'orange';
+      }
+      
       setTimeout(() => {
         ahUrlInput.style.borderColor = '';
       }, 2000);
       
     } catch (error) {
-      console.error('[Auto-fill] Error:', error);
       ahUrlInput.style.borderColor = 'var(--danger)';
       setTimeout(() => {
         ahUrlInput.style.borderColor = '';
@@ -391,71 +385,29 @@
       const urlPath = new URL(ahUrl).pathname;
       const pathParts = urlPath.split('/').filter(part => part.length > 0);
       
-      // AH URLs format: /producten/product-name/wi123456
-      const lastPart = pathParts[pathParts.length - 1];
-      if (lastPart && lastPart.startsWith('wi')) {
-        return lastPart;
+      // AH URLs can have formats:
+      // /producten/product/wi123456/product-name OR /producten/product/product-name/wi123456
+      // Find any part that starts with 'wi' followed by digits
+      for (const part of pathParts) {
+        if (part.match(/^wi\d+$/)) {
+          console.log('[extractProductId] Found product ID:', part);
+          return part;
+        }
       }
+      
+      console.log('[extractProductId] No product ID found in URL parts:', pathParts);
     } catch (e) {
       console.error('[extractProductId] Error:', e);
     }
     return null;
   }
 
-  // Fetch product details from AH mobile API (reverse-engineered from appie-go)
-  async function fetchFromAhApi(productId) {
-    try {
-      console.log('[AH API] Fetching product details for:', productId);
-      
-      // Using AH's mobile API endpoint
-      const apiUrl = `https://api.ah.nl/mobile-services/product/detail/v4/fir/${productId}`;
-      
-      const response = await fetch(apiUrl, {
-        headers: {
-          'User-Agent': 'Appie/8.0.0',
-          'Accept': 'application/json'
-        }
-      });
-
-      if (!response.ok) {
-        console.warn('[AH API] API returned', response.status);
-        return null;
-      }
-
-      const data = await response.json();
-      console.log('[AH API] Product data received:', data);
-      
-      return {
-        title: data.title || null,
-        imageUrl: data.images?.[0]?.url || null
-      };
-    } catch (error) {
-      console.error('[AH API] Fetch error:', error);
-      return null;
-    }
-  }
-
+  
   async function extractImageFromAhUrl(ahUrl) {
     try {
       console.log('[extractFromAh] Processing AH URL:', ahUrl);
       
-      // Try AH API first (most reliable)
-      const productId = extractProductIdFromUrl(ahUrl);
-      if (productId) {
-        console.log('[extractFromAh] Found product ID:', productId);
-        const apiData = await fetchFromAhApi(productId);
-        
-        if (apiData && apiData.title) {
-          console.log('[extractFromAh] AH API success:', apiData);
-          return { title: apiData.title, image: apiData.imageUrl };
-        } else {
-          console.log('[extractFromAh] AH API returned no data, falling back to URL extraction');
-        }
-      } else {
-        console.log('[extractFromAh] No product ID found in URL, using fallback');
-      }
-      
-      // Fallback: Extract from URL path
+      // Extract product name from URL path
       let productTitle = null;
       let imageUrl = null;
       
@@ -464,15 +416,22 @@
         const pathParts = urlPath.split('/').filter(part => part.length > 0);
         
         if (pathParts.length >= 2) {
-          // Extract product name from path (second to last part)
-          const productNameSlug = pathParts[pathParts.length - 2];
+          // Find the product name slug (not the wi123456 ID)
+          let productNameSlug = null;
+          for (const part of pathParts) {
+            if (!part.match(/^wi\d+$/)) {
+              productNameSlug = part;
+            }
+          }
           
-          // Convert slug to readable name
-          productTitle = productNameSlug
-            .replace(/-/g, ' ')
-            .replace(/\b\w/g, l => l.toUpperCase());
-          
-          console.log('[extractFromAh] URL extraction:', { productNameSlug, title: productTitle });
+          if (productNameSlug) {
+            // Convert slug to readable name
+            productTitle = productNameSlug
+              .replace(/-/g, ' ')
+              .replace(/\b\w/g, l => l.toUpperCase());
+            
+            console.log('[extractFromAh] URL extraction:', { productNameSlug, title: productTitle });
+          }
         }
       } catch (urlError) {
         console.log('[extractFromAh] URL parsing failed:', urlError);
