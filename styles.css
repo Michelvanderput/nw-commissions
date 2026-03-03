@@ -314,8 +314,8 @@ h1, h2, h3, h4, h5, h6 {
 
     &.loading {
       // Override default button loading styles
-      padding: 0.5rem 0.75rem;
-      min-width: auto;
+      padding: 0.5rem 0.75rem !important;
+      min-width: auto !important;
 
       svg {
         display: inline-block;
