@@ -385,11 +385,77 @@
     }
   }
 
+  // Extract product ID from AH URL (webshop ID format: wi123456)
+  function extractProductIdFromUrl(ahUrl) {
+    try {
+      const urlPath = new URL(ahUrl).pathname;
+      const pathParts = urlPath.split('/').filter(part => part.length > 0);
+      
+      // AH URLs format: /producten/product-name/wi123456
+      const lastPart = pathParts[pathParts.length - 1];
+      if (lastPart && lastPart.startsWith('wi')) {
+        return lastPart;
+      }
+    } catch (e) {
+      console.error('[extractProductId] Error:', e);
+    }
+    return null;
+  }
+
+  // Fetch product details from AH mobile API (reverse-engineered from appie-go)
+  async function fetchFromAhApi(productId) {
+    try {
+      console.log('[AH API] Fetching product details for:', productId);
+      
+      // Using AH's mobile API endpoint
+      const apiUrl = `https://api.ah.nl/mobile-services/product/detail/v4/fir/${productId}`;
+      
+      const response = await fetch(apiUrl, {
+        headers: {
+          'User-Agent': 'Appie/8.0.0',
+          'Accept': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        console.warn('[AH API] API returned', response.status);
+        return null;
+      }
+
+      const data = await response.json();
+      console.log('[AH API] Product data received:', data);
+      
+      return {
+        title: data.title || null,
+        imageUrl: data.images?.[0]?.url || null
+      };
+    } catch (error) {
+      console.error('[AH API] Fetch error:', error);
+      return null;
+    }
+  }
+
   async function extractImageFromAhUrl(ahUrl) {
     try {
-      console.log('[extractFromAh] Using URL-based extraction due to scraping restrictions');
+      console.log('[extractFromAh] Processing AH URL:', ahUrl);
       
-      // Primary method: Extract from URL path (most reliable)
+      // Try AH API first (most reliable)
+      const productId = extractProductIdFromUrl(ahUrl);
+      if (productId) {
+        console.log('[extractFromAh] Found product ID:', productId);
+        const apiData = await fetchFromAhApi(productId);
+        
+        if (apiData && apiData.title) {
+          console.log('[extractFromAh] AH API success:', apiData);
+          return { title: apiData.title, image: apiData.imageUrl };
+        } else {
+          console.log('[extractFromAh] AH API returned no data, falling back to URL extraction');
+        }
+      } else {
+        console.log('[extractFromAh] No product ID found in URL, using fallback');
+      }
+      
+      // Fallback: Extract from URL path
       let productTitle = null;
       let imageUrl = null;
       
@@ -398,8 +464,8 @@
         const pathParts = urlPath.split('/').filter(part => part.length > 0);
         
         if (pathParts.length >= 2) {
-          // Extract product name from path
-          const productNameSlug = pathParts[pathParts.length - 1]; // e.g., old-mother-crispy-chili-in-oil
+          // Extract product name from path (second to last part)
+          const productNameSlug = pathParts[pathParts.length - 2];
           
           // Convert slug to readable name
           productTitle = productNameSlug
@@ -407,58 +473,14 @@
             .replace(/\b\w/g, l => l.toUpperCase());
           
           console.log('[extractFromAh] URL extraction:', { productNameSlug, title: productTitle });
-          console.log('[extractFromAh] Image URL cannot be predicted (AH uses internal identifiers)');
         }
       } catch (urlError) {
         console.log('[extractFromAh] URL parsing failed:', urlError);
       }
       
-      // Try scraping as fallback (will likely fail but worth a try)
-      if (!productTitle) {
-        console.log('[extractFromAh] Attempting scraping fallback...');
-        try {
-          const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(ahUrl)}`;
-          const response = await fetch(proxyUrl);
-          
-          if (response.ok) {
-            const data = await response.json();
-            const html = data.contents;
-            
-            // Try JSON-LD extraction
-            const jsonLdMatch = html.match(/<script[^>]*type="application\/ld\+json"[^>]*>(.*?)<\/script>/is);
-            if (jsonLdMatch) {
-              try {
-                const jsonLd = JSON.parse(jsonLdMatch[1]);
-                if (jsonLd.name) {
-                  productTitle = jsonLd.name;
-                  console.log('[extractFromAh] JSON-LD fallback worked:', productTitle);
-                }
-                if (jsonLd.image) {
-                  imageUrl = jsonLd.image;
-                  console.log('[extractFromAh] JSON-LD image found:', imageUrl);
-                }
-              } catch (e) {
-                console.log('[extractFromAh] JSON-LD parse failed:', e);
-              }
-            }
-          }
-        } catch (scrapeError) {
-          console.log('[extractFromAh] Scraping fallback failed (expected):', scrapeError.message);
-        }
-      }
-      
-      // Clean up the title if we got it from URL or scraping
-      if (productTitle) {
-        // Clean up common AH title patterns
-        productTitle = productTitle.replace(/\s*-\s*Albert Heijn.*$/i, ''); // Remove " - Albert Heijn" suffix
-        productTitle = productTitle.replace(/\s*\|\s*Albert Heijn.*$/i, ''); // Remove " | Albert Heijn" suffix
-        productTitle = productTitle.replace(/\s+bestellen\s*$/i, ''); // Remove " bestellen" suffix
-        console.log('[extractFromAh] Cleaned title:', productTitle);
-      }
-      
-      console.log('[extractFromAh] Extracted:', { title: productTitle, image: imageUrl });
-      
+      console.log('[extractFromAh] Final result:', { title: productTitle, image: imageUrl });
       return { title: productTitle, image: imageUrl };
+      
     } catch (error) {
       console.error('[extractImageFromAhUrl] Error:', error);
       return { title: null, image: null };
