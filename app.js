@@ -50,6 +50,7 @@
 
   const form = document.getElementById('groceryForm');
   const submitBtn = document.getElementById('submitBtn');
+  const clearFormBtn = document.getElementById('clearFormBtn');
   const formMessage = document.getElementById('formMessage');
   const itemsList = document.getElementById('itemsList');
   const listMessage = document.getElementById('listMessage');
@@ -73,7 +74,11 @@
     console.log('[Grocery App] API Base URL:', API_BASE_URL);
     
     form.addEventListener('submit', handleSubmit);
-    tabs.forEach(tab => tab.addEventListener('click', handleTabClickDebounced));
+    clearFormBtn.addEventListener('click', handleClearForm);
+    tabs.forEach(tab => {
+      tab.addEventListener('click', handleTabClickDebounced);
+      tab.addEventListener('keydown', (e) => handleTabKeyDown(e, tab.dataset.status));
+    });
     copyBtn.addEventListener('click', handleCopyText);
     deleteTabItemsBtn.addEventListener('click', () => {
       console.log('[Event] Delete tab items button clicked for tab:', currentStatus);
@@ -211,6 +216,26 @@
     setTimeout(() => {
       element.classList.add('hidden');
     }, 3000);
+  }
+
+  function handleClearForm() {
+    console.log('[Clear Form] Clearing form fields');
+    
+    // Clear all form fields
+    form.reset();
+    
+    // Clear any custom styling
+    if (ahUrlInput) {
+      ahUrlInput.style.borderColor = '';
+    }
+    
+    // Hide any existing messages
+    formMessage.classList.add('hidden');
+    
+    // Focus on the first field (AH URL)
+    if (ahUrlInput) {
+      ahUrlInput.focus();
+    }
   }
 
   async function handleAhUrlInput(url) {
@@ -699,6 +724,42 @@
     loadItems();
   }
 
+  function handleTabKeyDown(e, status) {
+    // Handle arrow key navigation
+    let targetTab = null;
+    
+    switch(e.key) {
+      case 'ArrowRight':
+      case 'ArrowDown':
+        e.preventDefault();
+        targetTab = e.target.nextElementSibling || tabs[0];
+        break;
+      case 'ArrowLeft':
+      case 'ArrowUp':
+        e.preventDefault();
+        targetTab = e.target.previousElementSibling || tabs[tabs.length - 1];
+        break;
+      case 'Home':
+        e.preventDefault();
+        targetTab = tabs[0];
+        break;
+      case 'End':
+        e.preventDefault();
+        targetTab = tabs[tabs.length - 1];
+        break;
+      case 'Enter':
+      case ' ':
+        e.preventDefault();
+        handleTabClick(status);
+        break;
+    }
+    
+    if (targetTab) {
+      targetTab.focus();
+      handleTabClick(targetTab.dataset.status);
+    }
+  }
+
   // Debounced tab switching to prevent rapid API calls
   let debouncedLoadTimeout;
   
@@ -928,14 +989,45 @@
   }
 
   function openAdminModal() {
+    console.log('[Modal] Opening admin modal');
     adminModal.classList.remove('hidden');
-    adminCodeInput.value = '';
     adminCodeInput.focus();
+    
+    // Trap focus within modal
+    const focusableElements = adminModal.querySelectorAll('button, input, [tabindex]:not([tabindex="-1"])');
+    const firstElement = focusableElements[0];
+    const lastElement = focusableElements[focusableElements.length - 1];
+    
+    adminModal.addEventListener('keydown', function trapFocus(e) {
+      if (e.key === 'Tab') {
+        if (e.shiftKey) {
+          if (document.activeElement === firstElement) {
+            e.preventDefault();
+            lastElement.focus();
+          }
+        } else {
+          if (document.activeElement === lastElement) {
+            e.preventDefault();
+            firstElement.focus();
+          }
+        }
+      }
+      
+      if (e.key === 'Escape') {
+        closeAdminModal();
+      }
+    });
+    
+    // Store reference to remove later
+    adminModal._focusTrapHandler = trapFocus;
   }
 
   function closeAdminModal() {
     adminModal.classList.add('hidden');
     adminCodeInput.value = '';
+    // Remove focus trap handler
+    adminModal.removeEventListener('keydown', adminModal._focusTrapHandler);
+    adminModal._focusTrapHandler = null;
   }
 
   async function executeAdminAction(actionToExecute) {
