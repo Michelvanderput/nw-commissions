@@ -11,8 +11,17 @@
   <meta name="robots" content="noindex, nofollow, noarchive, nosnippet, notranslate, noimageindex">
   <meta name="googlebot" content="noindex, nofollow, noarchive, nosnippet, notranslate, noimageindex">
   <meta name="bingbot" content="noindex, nofollow, noarchive, nosnippet, notranslate, noimageindex">
+  
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
 </head>
-<body>
+<body x-data="groceryApp()" x-cloak>
+  <template x-for="notification in notifications" :key="notification.id">
+    <div :class="'notification ' + notification.type + (notification.hiding ? ' hiding' : ' show')" x-show="!notification.hiding" :style="`top: ${1 + (notification.index * 0.5)}rem;`" x-transition:enter="transition ease-out duration-300" x-transition:enter-start="opacity-0" x-transition:enter-end="opacity-100" x-transition:leave="transition ease-in duration-300" x-transition:leave-start="opacity-100" x-transition:leave-end="opacity-0">
+      <span x-text="notification.text"></span>
+    </div>
+  </template>
+  
   <div class="container">
     <header>
       <img src="resource/logo_nexwork_conclusion.svg" alt="Nexwork logo" class="logo">
@@ -21,52 +30,50 @@
     <div class="main-content">
       <section class="form-section" id="formSection">
         <h2>Boodschappen aanvragen</h2>
-        <form id="groceryForm" class="grocery-form" novalidate>
+        <form @submit.prevent="handleSubmit" class="grocery-form" novalidate>
           <fieldset>
             <legend class="visually-hidden">Product toevoegen aan boodschappenlijst</legend>
           <div class="form-group">
             <label for="ahUrl">AH Link *</label>
-            <input type="url" id="ahUrl" name="ahUrl" required placeholder="https://www.ah.nl/producten/product/...">
+            <input type="url" id="ahUrl" x-model="form.ahUrl" required placeholder="https://www.ah.nl/producten/product/...">
           </div>
 
           <div class="form-group">
             <label for="item">Product naam *</label>
-            <input type="text" id="item" name="item" required placeholder="Welk product?">
+            <input type="text" id="item" x-model="form.item" required placeholder="Welk product?">
           </div>
 
           <div class="form-group">
             <label for="imageUrl">Afbeelding url (optioneel)</label>
-            <input type="url" id="imageUrl" name="imageUrl" placeholder="Optioneel - handmatig toevoegen">
+            <input type="url" id="imageUrl" x-model="form.imageUrl" placeholder="Optioneel - handmatig toevoegen">
           </div>
 
           <div class="form-group">
             <label for="quantity">Hoeveelheid</label>
-            <input type="number" id="quantity" name="quantity" min="1" max="10" placeholder="1" value="1">
+            <input type="number" id="quantity" x-model="form.quantity" min="1" max="10" placeholder="1">
           </div>
 
           <div class="form-group">
             <label for="substituteFor">Vervangt</label>
-            <input type="text" id="substituteFor" name="substituteFor" placeholder="In plaats van iets anders?">
+            <input type="text" id="substituteFor" x-model="form.substituteFor" placeholder="In plaats van iets anders?">
           </div>
 
           <div class="form-group">
             <label for="name">Jouw naam *</label>
-            <input type="text" id="name" name="name" required placeholder="Jouw naam">
+            <input type="text" id="name" x-model="form.name" required placeholder="Jouw naam">
           </div>
 
           <div class="form-buttons">
-            <button type="submit" class="btn btn-primary" id="submitBtn">
+            <button type="submit" class="btn btn-primary" :disabled="formLoading" :class="{'loading': formLoading}">
               <span class="btn-text">Toevoegen aan lijst</span>
               <span class="btn-loader">Opslaan...</span>
             </button>
-            <button type="button" class="btn btn-secondary" id="clearFormBtn">
+            <button type="button" class="btn btn-secondary" @click="clearForm" :disabled="formLoading">
               <span class="btn-text">Legen</span>
-              <span class="btn-loader">Bezig...</span>
             </button>
           </div>
           </fieldset>
         </form>
-        <div id="formMessage" class="message hidden" role="alert" aria-live="polite"></div>
       </section>
 
       <section class="list-section">
@@ -74,34 +81,94 @@
           <h2>Boodschappenlijst</h2>
           <div class="header-controls">
             <div class="tabs" role="tablist" aria-label="Product status">
-              <button class="tab active" data-status="open" role="tab" aria-selected="true" aria-controls="open-panel" id="open-tab">Verzoeken</button>
-              <button class="tab" data-status="closed" role="tab" aria-selected="false" aria-controls="closed-panel" id="closed-tab">Besteld</button>
-              <button class="tab" data-status="deleted" role="tab" aria-selected="false" aria-controls="deleted-panel" id="deleted-tab">Verwijderd</button>
+              <button @click="switchTab('open')" :class="{'tab': true, 'active': currentStatus === 'open'}" role="tab" :aria-selected="currentStatus === 'open'" aria-controls="open-panel" id="open-tab">Verzoeken</button>
+              <button @click="switchTab('closed')" :class="{'tab': true, 'active': currentStatus === 'closed'}" role="tab" :aria-selected="currentStatus === 'closed'" aria-controls="closed-panel" id="closed-tab">Besteld</button>
+              <button @click="switchTab('deleted')" :class="{'tab': true, 'active': currentStatus === 'deleted'}" role="tab" :aria-selected="currentStatus === 'deleted'" aria-controls="deleted-panel" id="deleted-tab">Verwijderd</button>
             </div>
 
           </div>
         </div>
 
-        <div id="listMessage" class="message hidden" role="alert" aria-live="polite"></div>
-        <div id="itemsList" class="items-list" role="tabpanel" aria-labelledby="open-tab" id="open-panel">
-          <div class="loading">
+        <div class="items-list" role="tabpanel" :aria-labelledby="currentStatus + '-tab'" :id="currentStatus + '-panel'">
+          <div x-show="loading" class="loading">
             <div class="spinner"></div>
             <p>Lijst ophalen...</p>
           </div>
+          
+          <p x-show="!loading && currentItems.length === 0" class="empty-state">Geen items gevonden</p>
+          
+          <template x-for="item in currentItems" :key="item.id">
+            <div class="item-card" :class="item.status">
+              <div class="item-image-container">
+                <a x-show="item.ahUrl" :href="item.ahUrl" target="_blank" rel="noopener" class="item-image-link">
+                  <img :src="item.imageUrl" :alt="item.item" class="item-image" @error="$el.style.display='none'">
+                </a>
+                <img x-show="!item.ahUrl" :src="item.imageUrl" :alt="item.item" class="item-image" @error="$el.style.display='none'">
+                <div x-show="item.status === 'closed' && item.closedAt" class="item-ordered" x-text="'Besteld op ' + formatDateOnly(item.closedAt)"></div>
+                <div x-show="item.status === 'deleted' && item.deletedAt" class="item-deleted" x-text="'Verwijderd op ' + formatDateOnly(item.deletedAt)"></div>
+              </div>
+              <div class="item-content">
+                <a x-show="item.ahUrl" :href="item.ahUrl" target="_blank" rel="noopener" class="item-name item-name-link">
+                  <span x-text="item.item"></span>
+                  <span x-show="item.quantity" class="item-quantity-inline" x-text="'(' + item.quantity + 'x)'"></span>
+                </a>
+                <div x-show="!item.ahUrl" class="item-name">
+                  <span x-text="item.item"></span>
+                  <span x-show="item.quantity" class="item-quantity-inline" x-text="'(' + item.quantity + 'x)'"></span>
+                </div>
+                <div class="item-details">
+                  <div x-show="item.substituteFor" class="item-substitute" x-text="'In plaats van ' + item.substituteFor"></div>
+                </div>
+                <div class="item-meta" x-text="'Aangevraagd door ' + item.name + ' • ' + formatDate(item.createdAt)"></div>
+              </div>
+              <div class="item-actions">
+                <template x-if="item.status === 'open'">
+                  <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <button @click="setItemStatus(item.id, 'closed', $el)" class="btn btn-sm btn-secondary" :class="{'loading': $el.classList.contains('loading')}">
+                      <span class="btn-text">Besteld?</span>
+                      <span class="btn-loader">Bezig...</span>
+                    </button>
+                    <button @click="deleteItem(item.id, $el)" class="btn btn-sm btn-danger" :class="{'loading': $el.classList.contains('loading')}">
+                      <span class="btn-text">Verwijderen</span>
+                      <span class="btn-loader">Bezig...</span>
+                    </button>
+                  </div>
+                </template>
+                <template x-if="item.status === 'closed'">
+                  <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+                    <button @click="setItemStatus(item.id, 'open', $el)" class="btn btn-sm btn-primary" :class="{'loading': $el.classList.contains('loading')}">
+                      <span class="btn-text">Toevoegen</span>
+                      <span class="btn-loader">Bezig...</span>
+                    </button>
+                    <button @click="deleteItem(item.id, $el)" class="btn btn-sm btn-danger" :class="{'loading': $el.classList.contains('loading')}">
+                      <span class="btn-text">Verwijderen</span>
+                      <span class="btn-loader">Bezig...</span>
+                    </button>
+                  </div>
+                </template>
+                <template x-if="item.status === 'deleted'">
+                  <button @click="setItemStatus(item.id, 'open', $el)" class="btn btn-sm btn-primary" :class="{'loading': $el.classList.contains('loading')}">
+                    <span class="btn-text">Opnieuw bestellen</span>
+                    <span class="btn-loader">Bezig...</span>
+                  </button>
+                </template>
+              </div>
+            </div>
+          </template>
         </div>
 
         <div class="actions-bar">
           <div class="bulk-actions">
-            <button class="btn btn-danger" id="deleteTabItemsBtn">
-              <span class="btn-text" id="deleteTabItemsBtnText">Verwijder items</span>
+            <button @click="handleDeleteTabItems" class="btn btn-danger" :class="{'loading': bulkLoading}" :disabled="bulkLoading">
+              <span class="btn-text" x-text="deleteButtonText"></span>
               <span class="btn-loader">Verwijderen...</span>
             </button>
-          <button class="btn btn-secondary" id="copyBtn" aria-label="Kopieer lijst naar klembord">
+          <button @click="handleCopyText" class="btn btn-secondary" x-show="currentStatus === 'open'" :class="{'loading': copyLoading}" :disabled="copyLoading" aria-label="Kopieer lijst naar klembord">
             <span class="btn-text">📋 Lijst kopieren</span>
             <span class="btn-loader">Kopieren...</span>
           </button>
-          <button class="btn btn-secondary btn-sm" id="refreshBtn" title="Data vernieuwen" aria-label="Vernieuw de lijst">
-            <svg fill="currentColor" width="16" height="16" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <button @click="refreshItems" class="btn btn-secondary btn-sm" :disabled="loading" title="Data vernieuwen" aria-label="Vernieuw de lijst">
+            <svg fill="currentColor" width="16" height="16" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" :class="{'animate-spin': loading}">
               <path d="M19.146 4.854l-1.489 1.489A8 8 0 1 0 12 20a8.094 8.094 0 0 0 7.371-4.886 1 1 0 1 0-1.842-.779A6.071 6.071 0 0 1 12 18a6 6 0 1 1 4.243-10.243l-1.39 1.39a.5.5 0 0 0 .354.854H19.5A.5.5 0 0 0 20 9.5V5.207a.5.5 0 0 0-.854-.353z"/>
             </svg>
           </button>
@@ -111,14 +178,14 @@
     </div>
   </div>
 
-  <div id="adminModal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+  <div x-show="showAdminModal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" @keydown.escape="closeAdminModal">
     <div class="modal-content">
       <h3 id="modalTitle">Admin verificatie</h3>
       <p>Vul admin code in om verder te gaan:</p>
-      <input type="password" id="adminCodeInput" placeholder="Admin code" aria-label="Admin code" autocomplete="off">
+      <input type="password" x-model="adminCodeInput" @keydown.enter="confirmAdminAction" placeholder="Admin code" aria-label="Admin code" autocomplete="off" x-ref="adminInput">
       <div class="modal-actions">
-        <button class="btn btn-secondary" id="adminCancelBtn">Annuleren</button>
-        <button class="btn btn-primary" id="adminConfirmBtn">Bevestigen</button>
+        <button class="btn btn-secondary" @click="closeAdminModal">Annuleren</button>
+        <button class="btn btn-primary" @click="confirmAdminAction">Bevestigen</button>
       </div>
     </div>
   </div>

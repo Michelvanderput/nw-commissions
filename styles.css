@@ -33,6 +33,7 @@ body {
   color: var(--text);
   line-height: 1.5;
   min-height: 100vh;
+  position: relative; /* Ensure proper positioning context */
 }
 
 .visually-hidden {
@@ -45,6 +46,10 @@ body {
   clip: rect(0, 0, 0, 0) !important;
   white-space: nowrap !important;
   border: 0 !important;
+}
+
+[x-cloak] {
+  display: none !important;
 }
 
 .container {
@@ -309,6 +314,68 @@ fieldset {
   }
 }
 
+// Fixed notification system
+.notification-container {
+  position: fixed !important;
+  top: 1rem !important;
+  right: 1rem !important;
+  z-index: 9999 !important;
+  pointer-events: none; /* Allow clicks through container */
+  
+  /* Debug: Add a red border to verify positioning */
+  border: 2px solid red !important;
+  background: rgba(255, 0, 0, 0.1) !important;
+  padding: 0.5rem !important;
+  
+  @media (min-width: 640px) {
+    top: 2rem !important;
+    right: 2rem !important;
+  }
+}
+
+.notification {
+  position: fixed !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  padding: 1rem;
+  border-radius: var(--border-radius);
+  margin-bottom: 0.5rem;
+  font-size: 0.875rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  border-left: 4px solid;
+  pointer-events: auto; /* Re-enable clicks for notification */
+  opacity: 0;
+  transition: opacity 0.3s ease-out;
+  z-index: 10000 !important;
+  width: 90%;
+  max-width: 400px;
+  
+  @media (min-width: 640px) {
+    width: auto;
+    max-width: 400px;
+  }
+  
+  &.show {
+    opacity: 1;
+  }
+  
+  &.success {
+    background: #d1fae5;
+    color: #065f46;
+    border-left-color: #10b981;
+  }
+  
+  &.error {
+    background: #fee2e2;
+    color: #991b1b;
+    border-left-color: #ef4444;
+  }
+  
+  &.hiding {
+    opacity: 0;
+  }
+}
+
 .hidden {
   display: none !important;
 }
@@ -363,7 +430,7 @@ fieldset {
 .tabs {
   display: flex;
   gap: 0.75rem;
-
+  row-gap: 1.5rem;
   @media (max-width: 768px) {
     flex-wrap: wrap;
     gap: 0.5rem;
@@ -475,6 +542,10 @@ fieldset {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
 }
 
 .empty-state {

@@ -1,20 +1,158 @@
-(function() {
-  'use strict';
-
-  const API_BASE_URL = typeof CONFIG !== 'undefined' ? CONFIG.API_BASE_URL : '';
-
-  let currentStatus = 'open';
-  let pendingAdminAction = null;
-  let adminCode = null;
-  
-  // Caching system
-  const cache = {
-    items: new Map(),
+// Alpine.js Grocery App
+function groceryApp() {
+  return {
+    // API Configuration
+    API_BASE_URL: typeof CONFIG !== 'undefined' ? CONFIG.API_BASE_URL : '',
+    
+    // State
+    currentStatus: 'open',
+    loading: false,
+    formLoading: false,
+    bulkLoading: false,
+    copyLoading: false,
+    
+    // Data
+    items: {
+      open: [],
+      closed: [],
+      deleted: []
+    },
+    
+    // Form
+    form: {
+      ahUrl: '',
+      item: '',
+      imageUrl: '',
+      quantity: 1,
+      substituteFor: '',
+      name: ''
+    },
+    
+    // Messages
+    formMessage: { text: '', type: '' },
+    listMessage: { text: '', type: '' },
+    
+    // Notification system
+    notifications: [],
+    
+    // Admin
+    showAdminModal: false,
+    adminCodeInput: '',
+    adminCode: null,
+    pendingAdminAction: null,
+    
+    // Cache
+    cache: new Map(),
     lastFetch: new Map(),
     cacheExpiry: 5 * 60 * 1000, // 5 minutes
     
-    get(status) {
-      const cached = this.items.get(status);
+    // Constants
+    ADMIN_CODE_STORAGE_KEY: 'grocery_admin_code',
+    ADMIN_CODE_EXPIRY_DAYS: 30,
+    
+    // Computed
+    get currentItems() {
+      return this.items[this.currentStatus] || [];
+    },
+    
+    get deleteButtonText() {
+      if (this.currentStatus === 'open') return 'Verwijder alle verzoeken';
+      if (this.currentStatus === 'closed') return 'Verwijder bestelde items';
+      if (this.currentStatus === 'deleted') return 'Prullenbak legen';
+      return 'Verwijder items';
+    },
+    
+    // Lifecycle
+    init() {
+      console.log('[Alpine App] Initializing...');
+      console.log('[Alpine App] API Base URL:', this.API_BASE_URL);
+      
+      // Load stored admin code
+      this.adminCode = this.getStoredAdminCode();
+      
+      // Load initial items
+      this.loadItems();
+      
+      // Preload other tabs
+      setTimeout(() => this.preloadTabs(), 1000);
+    },
+    
+    // API Methods
+    async apiRequest(endpoint, options = {}) {
+      const startTime = performance.now();
+      console.log('[API] Request:', endpoint);
+      
+      try {
+        const clientIP = await this.getClientIP();
+        const userAgent = navigator.userAgent;
+        
+        const params = new URLSearchParams({
+          ip: clientIP,
+          userAgent: userAgent,
+          ...options.params
+        });
+        
+        const url = `${this.API_BASE_URL}${endpoint}&${params.toString()}`;
+        
+        const response = await fetch(url, { method: 'GET' });
+        const duration = performance.now() - startTime;
+        
+        console.log(`[API] Request completed in ${duration.toFixed(0)}ms`);
+        
+        if (!response.ok) {
+          if (response.status === 403) {
+            document.body.innerHTML = `
+              <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; font-family: 'Poppins', sans-serif; background: #efeeff;">
+                <div style="text-align: center; padding: 2rem; background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(28, 39, 79, 0.08); max-width: 500px;">
+                  <h1 style="color: #a73232; margin-bottom: 1rem;">Access Denied</h1>
+                  <p style="color: #6b7280; margin-bottom: 0.5rem;">Your IP address is not authorized to access this page.</p>
+                  <p style="color: #6b7280; font-size: 0.875rem;">Contact the administrator if you believe this is an error.</p>
+                </div>
+              </div>
+            `;
+            throw new Error('Access denied - IP not authorized');
+          }
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const data = await response.json();
+        
+        if (!data.ok) {
+          if (data.error && data.error.includes('IP not authorized')) {
+            document.body.innerHTML = `
+              <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; font-family: 'Poppins', sans-serif; background: #efeeff;">
+                <div style="text-align: center; padding: 2rem; background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(28, 39, 79, 0.08); max-width: 500px;">
+                  <h1 style="color: #a73232; margin-bottom: 1rem;">Access Denied</h1>
+                  <p style="color: #6b7280; margin-bottom: 0.5rem;">Your IP address is not authorized to access this page.</p>
+                  <p style="color: #6b7280; font-size: 0.875rem;">Contact the administrator if you believe this is an error.</p>
+                </div>
+              </div>
+            `;
+          }
+          throw new Error(data.error || 'Request failed');
+        }
+        
+        return data;
+      } catch (error) {
+        console.error('[API] Request failed:', error);
+        throw error;
+      }
+    },
+    
+    async getClientIP() {
+      try {
+        const response = await fetch('https://api.ipify.org?format=json');
+        const data = await response.json();
+        return data.ip;
+      } catch (error) {
+        console.error('[getClientIP] Error:', error);
+        return 'unknown';
+      }
+    },
+    
+    // Cache Methods
+    getCachedItems(status) {
+      const cached = this.cache.get(status);
       const lastFetch = this.lastFetch.get(status) || 0;
       
       if (cached && (Date.now() - lastFetch) < this.cacheExpiry) {
@@ -26,1136 +164,425 @@
       return null;
     },
     
-    set(status, items) {
-      this.items.set(status, items);
+    setCachedItems(status, items) {
+      this.cache.set(status, items);
       this.lastFetch.set(status, Date.now());
       console.log('[Cache] Set for status:', status, 'with', items.length, 'items');
     },
     
-    invalidate(status) {
-      this.items.delete(status);
+    invalidateCache(status) {
+      this.cache.delete(status);
       this.lastFetch.delete(status);
       console.log('[Cache] Invalidated for status:', status);
     },
     
-    clear() {
-      this.items.clear();
+    clearCache() {
+      this.cache.clear();
       this.lastFetch.clear();
       console.log('[Cache] Cleared all');
-    }
-  };
-  
-  const ADMIN_CODE_STORAGE_KEY = 'grocery_admin_code';
-  const ADMIN_CODE_EXPIRY_DAYS = 30;
-
-  const form = document.getElementById('groceryForm');
-  const submitBtn = document.getElementById('submitBtn');
-  const clearFormBtn = document.getElementById('clearFormBtn');
-  const formMessage = document.getElementById('formMessage');
-  const itemsList = document.getElementById('itemsList');
-  const listMessage = document.getElementById('listMessage');
-  const tabs = document.querySelectorAll('.tab');
-  const copyBtn = document.getElementById('copyBtn');
-  const deleteTabItemsBtn = document.getElementById('deleteTabItemsBtn');
-  const deleteTabItemsBtnText = document.getElementById('deleteTabItemsBtnText');
-  const refreshBtn = document.getElementById('refreshBtn');
-  const adminModal = document.getElementById('adminModal');
-  const adminCodeInput = document.getElementById('adminCodeInput');
-  const adminCancelBtn = document.getElementById('adminCancelBtn');
-  const adminConfirmBtn = document.getElementById('adminConfirmBtn');
-  
-  // Form fields for auto-fill
-  const ahUrlInput = document.getElementById('ahUrl');
-  const itemInput = document.getElementById('item');
-  const imageUrlInput = document.getElementById('imageUrl');
-
-  function init() {
-    console.log('[Grocery App] Initializing...');
-    console.log('[Grocery App] API Base URL:', API_BASE_URL);
+    },
     
-    form.addEventListener('submit', handleSubmit);
-    clearFormBtn.addEventListener('click', handleClearForm);
-    tabs.forEach(tab => {
-      tab.addEventListener('click', handleTabClickDebounced);
-      tab.addEventListener('keydown', (e) => handleTabKeyDown(e, tab.dataset.status));
-    });
-    copyBtn.addEventListener('click', handleCopyText);
-    deleteTabItemsBtn.addEventListener('click', () => {
-      console.log('[Event] Delete tab items button clicked for tab:', currentStatus);
-      handleDeleteTabItems();
-    });
-    adminCancelBtn.addEventListener('click', () => {
-      console.log('[Event] Admin cancel clicked, clearing pending action');
-      pendingAdminAction = null;
-      closeAdminModal();
-    });
-    adminConfirmBtn.addEventListener('click', confirmAdminAction);
-    adminCodeInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') confirmAdminAction();
-    });
-    
-    // Refresh button
-    refreshBtn.addEventListener('click', () => {
-      setButtonLoading(refreshBtn, true);
-      cache.clear();
-      loadItems(true).finally(() => {
-        setButtonLoading(refreshBtn, false);
-      });
-    });
-    
-    // Auto-fill when AH URL changes
-    let autoFillTimeout;
-    if (ahUrlInput) {
-      ahUrlInput.addEventListener('input', (e) => {
-        clearTimeout(autoFillTimeout);
-        const url = e.target.value.trim();
-        
-        if (url.length > 10) { // Only trigger if there's substantial input
-          autoFillTimeout = setTimeout(() => {
-            handleAhUrlInput(url);
-          }, 1000); // Wait 1 second after user stops typing
-        }
-      });
-    }
-
-    loadItems();
-  }
-
-  async function apiRequest(endpoint, options = {}) {
-    if (!API_BASE_URL) {
-      console.error('[API] API_BASE_URL not configured');
-      throw new Error('API_BASE_URL not configured. Please set up config.js');
-    }
-
-    let url = `${API_BASE_URL}${endpoint}`;
-    
-    if (options.body && typeof options.body === 'object') {
-      const params = new URLSearchParams();
-      Object.keys(options.body).forEach(key => {
-        if (options.body[key] !== undefined && options.body[key] !== null) {
-          params.append(key, options.body[key]);
-        }
-      });
+    // Data Loading
+    async loadItems() {
+      console.log('[loadItems] Loading items for status:', this.currentStatus);
       
-      // Add client info automatically
-      params.append('ip', await getClientIP());
-      params.append('userAgent', navigator.userAgent);
-      
-      const separator = url.includes('?') ? '&' : '?';
-      url = `${url}${separator}${params.toString()}`;
-      console.log('[API] Request params:', options.body);
-    } else {
-      // Add client info for GET requests too
-      const separator = url.includes('?') ? '&' : '?';
-      url = `${url}${separator}ip=${encodeURIComponent(await getClientIP())}&userAgent=${encodeURIComponent(navigator.userAgent)}`;
-    }
-    
-    console.log('[API] Request:', {
-      url,
-      method: 'GET'
-    });
-
-    const startTime = performance.now();
-
-    try {
-      const response = await fetch(url, { method: 'GET' });
-      const endTime = performance.now();
-      const duration = endTime - startTime;
-      
-      console.log('[API] Response status:', response.status, response.statusText);
-      console.log(`[API] Request completed in ${duration.toFixed(0)}ms`);
-      
-      // Log slow requests
-      if (duration > 3000) {
-        console.warn(`[API] Slow request detected: ${duration.toFixed(0)}ms for ${endpoint}`);
-      }
-      
-      if (!response.ok) {
-        console.error('[API] HTTP error:', response.status, response.statusText);
-        
-        // Handle 403 Forbidden (IP not authorized)
-        if (response.status === 403) {
-          document.body.innerHTML = `
-            <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; font-family: 'Poppins', sans-serif; background: #efeeff;">
-              <div style="text-align: center; padding: 2rem; background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(28, 39, 79, 0.08); max-width: 500px;">
-                <h1 style="color: #a73232; margin-bottom: 1rem;">Access Denied</h1>
-                <p style="color: #6b7280; margin-bottom: 0.5rem;">Your IP address is not authorized to access this page.</p>
-                <p style="color: #6b7280; font-size: 0.875rem;">Contact the administrator if you believe this is an error.</p>
-              </div>
-            </div>
-          `;
-          throw new Error('Access denied - IP not authorized');
-        }
-        
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      console.log('[API] Response data:', data);
-
-      if (!data.ok) {
-        console.error('[API] API error:', data.error);
-        
-        // Handle IP authorization errors from API response
-        if (data.error && data.error.includes('IP not authorized')) {
-          document.body.innerHTML = `
-            <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; font-family: 'Poppins', sans-serif; background: #efeeff;">
-              <div style="text-align: center; padding: 2rem; background: white; border-radius: 10px; box-shadow: 0 2px 8px rgba(28, 39, 79, 0.08); max-width: 500px;">
-                <h1 style="color: #a73232; margin-bottom: 1rem;">Access Denied</h1>
-                <p style="color: #6b7280; margin-bottom: 0.5rem;">Your IP address is not authorized to access this page.</p>
-                <p style="color: #6b7280; font-size: 0.875rem;">Contact the administrator if you believe this is an error.</p>
-              </div>
-            </div>
-          `;
-        }
-        
-        throw new Error(data.error || 'Request failed');
-      }
-
-      return data;
-    } catch (error) {
-      const endTime = performance.now();
-      const duration = endTime - startTime;
-      console.error('[API] Request failed after', duration.toFixed(0), 'ms:', error);
-      
-      if (error.name === 'TypeError' && error.message.includes('fetch')) {
-        throw new Error('Network error: Unable to connect to API. Make sure you are accessing the page via HTTP/HTTPS (not file://)');
-      }
-      
-      throw error;
-    }
-  }
-
-  async function getClientIP() {
-    try {
-      const response = await fetch('https://api.ipify.org?format=json');
-      const data = await response.json();
-      return data.ip;
-    } catch (error) {
-      console.warn('[Client] Could not fetch IP address:', error);
-      return 'unknown';
-    }
-  }
-
-  function showMessage(element, text, type) {
-    element.textContent = text;
-    element.className = `message ${type}`;
-    element.classList.remove('hidden');
-
-    setTimeout(() => {
-      element.classList.add('hidden');
-    }, 3000);
-  }
-
-  function handleClearForm() {
-    console.log('[Clear Form] Clearing form fields');
-    
-    // Clear all form fields
-    form.reset();
-    
-    // Clear any custom styling
-    if (ahUrlInput) {
-      ahUrlInput.style.borderColor = '';
-    }
-    
-    // Hide any existing messages
-    formMessage.classList.add('hidden');
-    
-    // Focus on the first field (AH URL)
-    if (ahUrlInput) {
-      ahUrlInput.focus();
-    }
-  }
-
-  async function handleAhUrlInput(url) {
-    // Normalize AH URL
-    let normalizedUrl = url;
-    if (!url.startsWith('http')) {
-      normalizedUrl = 'https://www.ah.nl' + (url.startsWith('/') ? url : '/' + url);
-    }
-    
-    if (!isValidAhUrl(normalizedUrl)) {
-      return;
-    }
-    
-    // Show loading state
-    ahUrlInput.style.borderColor = 'var(--primary)';
-    
-    try {
-      const extracted = await extractImageFromAhUrl(normalizedUrl);
-      
-      // Auto-fill product name if empty
-      if (!itemInput.value.trim() || itemInput.value.toLowerCase() === 'welk product?') {
-        if (extracted.title) {
-          itemInput.value = extracted.title;
-        }
-      }
-      
-      // Update the input field with normalized URL
-      ahUrlInput.value = normalizedUrl;
-      
-      // Show success feedback
-      if (extracted.title) {
-        ahUrlInput.style.borderColor = 'var(--success)';
-      } else {
-        ahUrlInput.style.borderColor = 'orange';
-      }
-      
-      setTimeout(() => {
-        ahUrlInput.style.borderColor = '';
-      }, 2000);
-      
-    } catch (error) {
-      ahUrlInput.style.borderColor = 'var(--danger)';
-      setTimeout(() => {
-        ahUrlInput.style.borderColor = '';
-      }, 2000);
-    }
-  }
-
-  async function handleSubmit(e) {
-    e.preventDefault();
-
-    // Show loader immediately
-    setButtonLoading(submitBtn, true);
-
-    const formData = new FormData(form);
-    let ahUrl = formData.get('ahUrl').trim();
-    const data = {
-      name: formData.get('name').trim(),
-      item: formData.get('item').trim(),
-      quantity: formData.get('quantity') ? parseInt(formData.get('quantity')) : undefined,
-      substituteFor: formData.get('substituteFor').trim() || undefined,
-      imageUrl: formData.get('imageUrl').trim() || undefined,
-      ahUrl: ahUrl || undefined
-    };
-
-    if (!data.name || !data.item) {
-      setButtonLoading(submitBtn, false);
-      showMessage(formMessage, 'Naam en item zijn verplicht', 'error');
-      return;
-    }
-
-    // Validate quantity range
-    if (data.quantity !== undefined && (data.quantity < 1 || data.quantity > 10)) {
-      setButtonLoading(submitBtn, false);
-      showMessage(formMessage, 'Hoeveelheid moet tussen 1 en 10 zijn', 'error');
-      return;
-    }
-
-    // AH URL validation and normalization
-    if (!ahUrl) {
-      setButtonLoading(submitBtn, false);
-      showMessage(formMessage, 'AH link is verplicht', 'error');
-      return;
-    }
-
-    // Check for duplicates
-    try {
-      const existingData = await apiRequest('?action=list&status=open');
-      const existingItems = existingData.items || [];
-      
-      const duplicateByUrl = existingItems.find(item => item.ahUrl === ahUrl);
-      const duplicateByName = existingItems.find(item => 
-        item.item.toLowerCase() === data.item.toLowerCase()
-      );
-      
-      if (duplicateByUrl) {
-        setButtonLoading(submitBtn, false);
-        showMessage(formMessage, 'Product staat al op de verzoeklijst', 'error');
+      // Check cache first
+      const cached = this.getCachedItems(this.currentStatus);
+      if (cached) {
+        this.items[this.currentStatus] = cached;
         return;
       }
       
-      if (duplicateByName) {
-        setButtonLoading(submitBtn, false);
-        showMessage(formMessage, 'Product met dezelfde naam staat al op de verzoeklijst', 'error');
-        return;
-      }
-    } catch (error) {
-      console.error('[handleSubmit] Error checking duplicates:', error);
-      // Continue with submission if duplicate check fails
-    }
-
-    // Normalize AH URL
-    if (!ahUrl.startsWith('http')) {
-      ahUrl = 'https://www.ah.nl' + (ahUrl.startsWith('/') ? ahUrl : '/' + ahUrl);
-    }
-    
-    if (!isValidAhUrl(ahUrl)) {
-      setButtonLoading(submitBtn, false);
-      showMessage(formMessage, 'Ongeldige AH URL. Gebruik een geldige ah.nl link', 'error');
-      return;
-    }
-    
-    data.ahUrl = ahUrl;
-
-    Object.keys(data).forEach(key => data[key] === undefined && delete data[key]);
-
-    try {
-      await apiRequest('?action=add', {
-        body: data
-      });
-
-      showMessage(formMessage, 'Item toegevoegd!', 'success');
-      form.reset();
-      
-      // Optimistic update: clear cache and refresh
-      cache.invalidate('open');
-      if (currentStatus === 'open') {
-        loadItems();
-      }
-    } catch (error) {
-      showMessage(formMessage, error.message, 'error');
-    } finally {
-      setButtonLoading(submitBtn, false);
-    }
-  }
-
-  function isValidUrl(string) {
-    try {
-      const url = new URL(string);
-      return url.protocol === 'http:' || url.protocol === 'https:';
-    } catch {
-      return false;
-    }
-  }
-
-  function isValidAhUrl(url) {
-    try {
-      const urlObj = new URL(url);
-      return (urlObj.hostname === 'ah.nl' || urlObj.hostname === 'www.ah.nl') && urlObj.protocol === 'https:';
-    } catch {
-      return false;
-    }
-  }
-
-  // Extract product ID from AH URL (webshop ID format: wi123456)
-  function extractProductIdFromUrl(ahUrl) {
-    try {
-      const urlPath = new URL(ahUrl).pathname;
-      const pathParts = urlPath.split('/').filter(part => part.length > 0);
-      
-      // AH URLs can have formats:
-      // /producten/product/wi123456/product-name OR /producten/product/product-name/wi123456
-      // Find any part that starts with 'wi' followed by digits
-      for (const part of pathParts) {
-        if (part.match(/^wi\d+$/)) {
-          console.log('[extractProductId] Found product ID:', part);
-          return part;
-        }
-      }
-      
-      console.log('[extractProductId] No product ID found in URL parts:', pathParts);
-    } catch (e) {
-      console.error('[extractProductId] Error:', e);
-    }
-    return null;
-  }
-
-  
-  async function extractImageFromAhUrl(ahUrl) {
-    try {
-      console.log('[extractFromAh] Processing AH URL:', ahUrl);
-      
-      // Extract product name from URL path
-      let productTitle = null;
-      let imageUrl = null;
+      this.loading = true;
       
       try {
-        const urlPath = new URL(ahUrl).pathname;
-        const pathParts = urlPath.split('/').filter(part => part.length > 0);
-        
-        if (pathParts.length >= 2) {
-          // Find the product name slug (not the wi123456 ID)
-          let productNameSlug = null;
-          for (const part of pathParts) {
-            if (!part.match(/^wi\d+$/)) {
-              productNameSlug = part;
-            }
-          }
-          
-          if (productNameSlug) {
-            // Convert slug to readable name
-            productTitle = productNameSlug
-              .replace(/-/g, ' ')
-              .replace(/\b\w/g, l => l.toUpperCase());
+        const data = await this.apiRequest(`?action=list&status=${this.currentStatus}`);
+        this.items[this.currentStatus] = data.items || [];
+        this.setCachedItems(this.currentStatus, this.items[this.currentStatus]);
+        console.log('[loadItems] Loaded', this.items[this.currentStatus].length, 'items');
+      } catch (error) {
+        console.error('[loadItems] Error:', error);
+        this.showNotification(error.message, 'error');
+      } finally {
+        this.loading = false;
+      }
+    },
+    
+    async refreshItems() {
+      console.log('[refreshItems] Force refreshing items for status:', this.currentStatus);
+      
+      this.loading = true;
             
-            console.log('[extractFromAh] Extracted product name:', productTitle);
-          }
+      const startTime = Date.now();
+      
+      try {
+        // Invalidate cache first
+        this.invalidateCache(this.currentStatus);
+        
+        const data = await this.apiRequest(`?action=list&status=${this.currentStatus}`);
+        this.items[this.currentStatus] = data.items || [];
+        this.setCachedItems(this.currentStatus, this.items[this.currentStatus]);
+        console.log('[refreshItems] Refreshed', this.items[this.currentStatus].length, 'items');
+      } catch (error) {
+        console.error('[refreshItems] Error:', error);
+        this.showNotification(error.message, 'error');
+      } finally {
+        // Ensure minimum loading time of 500ms for better UX
+        const elapsed = Date.now() - startTime;
+        if (elapsed < 500) {
+          setTimeout(() => {
+            this.loading = false;
+          }, 500 - elapsed);
+        } else {
+          this.loading = false;
         }
-      } catch (urlError) {
-        console.log('[extractFromAh] URL parsing failed:', urlError);
       }
-      
-      console.log('[extractFromAh] Final result:', { title: productTitle, image: imageUrl });
-      return { title: productTitle, image: imageUrl };
-      
-    } catch (error) {
-      console.error('[extractImageFromAhUrl] Error:', error);
-      return { title: null, image: null };
-    }
-  }
-
-  async function loadItems(forceRefresh = false) {
-    // Check cache first (unless force refresh)
-    if (!forceRefresh) {
-      const cachedItems = cache.get(currentStatus);
-      if (cachedItems) {
-        renderItems(cachedItems);
-        return;
-      }
-    }
-
-    itemsList.innerHTML = '<div class="loading"><div class="spinner"></div><p>Lijst laden...</p></div>';
-
-    try {
-      const data = await apiRequest(`?action=list&status=${currentStatus}`);
-      const items = data.items || [];
-      
-      // Update cache
-      cache.set(currentStatus, items);
-      
-      renderItems(items);
-      
-      // Update bulk actions visibility
-      updateBulkActionsVisibility(currentStatus);
-      
-      // Preload other tabs immediately after first successful load
-      if (!forceRefresh && !window.hasPreloaded) {
-        window.hasPreloaded = true;
-        setTimeout(() => {
-          preloadAllTabs();
-        }, 500); // Shorter delay, but after initial render
-      }
-    } catch (error) {
-      itemsList.innerHTML = `<p class="empty-state">Error: ${error.message}</p>`;
-    }
-  }
-
-  // Preload all tab data to prevent subsequent API calls
-  let isPreloading = false;
-  async function preloadAllTabs() {
-    if (isPreloading) {
-      console.log('[Preload] Already preloading, skipping...');
-      return;
-    }
+    },
     
-    isPreloading = true;
-    const statuses = ['closed', 'deleted']; // Only preload non-current tabs
-    
-    console.log('[Preload] Starting preload for tabs...');
-    
-    try {
-      // Load both tabs in parallel for maximum speed
-      const promises = statuses.map(async (status) => {
-        if (!cache.get(status)) {
+    async preloadTabs() {
+      const statuses = ['open', 'closed', 'deleted'].filter(s => s !== this.currentStatus);
+      
+      for (const status of statuses) {
+        if (!this.getCachedItems(status)) {
           try {
             console.log(`[Preload] Loading ${status} items...`);
-            const data = await apiRequest(`?action=list&status=${status}`);
-            cache.set(status, data.items || []);
-            console.log(`[Preload] ${status} items cached:`, data.items?.length || 0);
+            const data = await this.apiRequest(`?action=list&status=${status}`);
+            this.items[status] = data.items || [];
+            this.setCachedItems(status, this.items[status]);
           } catch (error) {
             console.error(`[Preload] Failed to load ${status}:`, error);
           }
-        } else {
-          console.log(`[Preload] ${status} already cached`);
         }
-      });
+      }
+    },
+    
+    // Tab Switching
+    switchTab(status) {
+      console.log('[switchTab] Switching to:', status);
+      this.currentStatus = status;
+      this.loadItems();
+    },
+    
+    // Form Handling
+    async handleSubmit() {
+      console.log('[handleSubmit] Submitting form');
       
-      await Promise.all(promises);
-    } finally {
-      isPreloading = false;
-      console.log('[Preload] Preload complete');
-    }
-  }
-
-  function renderItems(items) {
-    if (items.length === 0) {
-      itemsList.innerHTML = '<p class="empty-state">Geen items gevonden</p>';
-      return;
-    }
-
-    itemsList.innerHTML = items.map(item => createItemCard(item)).join('');
-
-    itemsList.querySelectorAll('.close-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        setButtonLoading(btn, true);
-        await setItemStatus(btn.dataset.id, 'closed');
-        setButtonLoading(btn, false);
-      });
-    });
-
-    itemsList.querySelectorAll('.reopen-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        setButtonLoading(btn, true);
-        await setItemStatus(btn.dataset.id, 'open');
-        setButtonLoading(btn, false);
-      });
-    });
-
-    itemsList.querySelectorAll('.delete-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        console.log('[Event] Individual delete button clicked for item:', btn.dataset.id);
-        pendingAdminAction = { type: 'deleteItem', id: btn.dataset.id };
+      this.formLoading = true;
+      this.formMessage = { text: '', type: '' };
+      
+      try {
+        const formData = {
+          ahUrl: this.form.ahUrl,
+          item: this.form.item,
+          imageUrl: this.form.imageUrl,
+          quantity: this.form.quantity || 1,
+          substituteFor: this.form.substituteFor,
+          name: this.form.name
+        };
         
-        // Check if we have a stored admin code
-        const storedCode = getStoredAdminCode();
-        if (storedCode) {
-          console.log('[Event] Using stored admin code for delete');
-          adminCode = storedCode;
-          
-          // Show confirmation dialog
-          if (confirm('Weet je zeker dat je dit item wilt verwijderen?')) {
-            executeAdminAction(pendingAdminAction);
-          } else {
-            pendingAdminAction = null;
-          }
-        } else {
-          openAdminModal();
-        }
-      });
-    });
-
-    itemsList.querySelectorAll('.add-back-btn').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        setButtonLoading(btn, true);
-        await setItemStatus(btn.dataset.id, 'open');
-        setButtonLoading(btn, false);
-      });
-    });
-  }
-
-  function createItemCard(item) {
-    const createdAt = formatDate(item.createdAt);
-    
-    // Add date line for closed and deleted items
-    let statusDateHtml = '';
-    if (item.status === 'closed' && item.closedAt) {
-      statusDateHtml = `<div class="item-ordered">Besteld op ${formatDateOnly(item.closedAt)}</div>`;
-    } else if (item.status === 'deleted' && item.deletedAt) {
-      statusDateHtml = `<div class="item-deleted">Verwijderd op ${formatDateOnly(item.deletedAt)}</div>`;
-    }
-
-    // Create image container with status label
-    const imageHtml = item.ahUrl 
-      ? `<div class="item-image-container">
-          <a href="${escapeHtml(item.ahUrl)}" target="_blank" rel="noopener" class="item-image-link">
-            <img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.item)}" class="item-image" onerror="this.style.display='none'">
-          </a>
-          ${statusDateHtml}
-        </div>`
-      : `<div class="item-image-container">
-          <img src="${escapeHtml(item.imageUrl)}" alt="${escapeHtml(item.item)}" class="item-image" onerror="this.style.display='none'">
-          ${statusDateHtml}
-        </div>`;
-
-    const substituteHtml = item.substituteFor 
-      ? `<div class="item-substitute">In plaats van ${escapeHtml(item.substituteFor)}</div>` 
-      : '';
-
-    // Create item name with optional link and quantity
-    const quantitySpan = item.quantity ? `<span class="item-quantity-inline">(${escapeHtml(item.quantity)}x)</span>` : '';
-    const itemNameHtml = item.ahUrl
-      ? `<a href="${escapeHtml(item.ahUrl)}" target="_blank" rel="noopener" class="item-name item-name-link">${escapeHtml(item.item)} ${quantitySpan}</a>`
-      : `<div class="item-name">${escapeHtml(item.item)} ${quantitySpan}</div>`;
-
-    let actionsHtml = '';
-    if (item.status === 'open') {
-      actionsHtml = `
-        <button class="btn btn-sm btn-secondary close-btn" data-id="${item.id}">
-          <span class="btn-text">Besteld?</span>
-          <span class="btn-loader">Bezig...</span>
-        </button>
-        <button class="btn btn-sm btn-danger delete-btn" data-id="${item.id}">
-          <span class="btn-text">Verwijderen</span>
-          <span class="btn-loader">Bezig...</span>
-        </button>
-      `;
-    } else if (item.status === 'closed') {
-      actionsHtml = `
-        <button class="btn btn-sm btn-primary add-back-btn" data-id="${item.id}">
-          <span class="btn-text">Toevoegen</span>
-          <span class="btn-loader">Bezig...</span>
-        </button>
-        <button class="btn btn-sm btn-danger delete-btn" data-id="${item.id}">
-          <span class="btn-text">Verwijderen</span>
-          <span class="btn-loader">Bezig...</span>
-        </button>
-      `;
-    } else if (item.status === 'deleted') {
-      actionsHtml = `
-        <button class="btn btn-sm btn-primary add-back-btn" data-id="${item.id}">
-          <span class="btn-text">Opnieuw bestellen</span>
-          <span class="btn-loader">Bezig...</span>
-        </button>
-      `;
-    }
-
-    return `
-      <div class="item-card ${item.status}">
-        ${imageHtml}
-        <div class="item-content">
-          ${itemNameHtml}
-          <div class="item-details">
-            ${substituteHtml}
-          </div>
-          <div class="item-meta">
-            Aangevraagd door ${escapeHtml(item.name)} • ${createdAt}
-          </div>
-        </div>
-        <div class="item-actions">
-          ${actionsHtml}
-        </div>
-      </div>
-    `;
-  }
-
-  function escapeHtml(text) {
-    if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
-  function formatDate(isoString) {
-    if (!isoString) return '';
-    try {
-      const date = new Date(isoString);
-      return date.toLocaleDateString('nl-NL', {
-        day: 'numeric',
-        month: 'long',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false
-      });
-    } catch {
-      return isoString;
-    }
-  }
-
-  function formatDateOnly(isoString) {
-    if (!isoString) return '';
-    try {
-      const date = new Date(isoString);
-      return date.toLocaleDateString('nl-NL', {
-        day: '2-digit',
-        month: '2-digit'
-      });
-    } catch {
-      return isoString;
-    }
-  }
-
-  function handleTabClick(e) {
-    tabs.forEach(t => t.classList.remove('active'));
-    e.target.classList.add('active');
-    currentStatus = e.target.dataset.status;
-    loadItems();
-  }
-
-  function handleTabKeyDown(e, status) {
-    // Handle arrow key navigation
-    let targetTab = null;
-    
-    switch(e.key) {
-      case 'ArrowRight':
-      case 'ArrowDown':
-        e.preventDefault();
-        targetTab = e.target.nextElementSibling || tabs[0];
-        break;
-      case 'ArrowLeft':
-      case 'ArrowUp':
-        e.preventDefault();
-        targetTab = e.target.previousElementSibling || tabs[tabs.length - 1];
-        break;
-      case 'Home':
-        e.preventDefault();
-        targetTab = tabs[0];
-        break;
-      case 'End':
-        e.preventDefault();
-        targetTab = tabs[tabs.length - 1];
-        break;
-      case 'Enter':
-      case ' ':
-        e.preventDefault();
-        handleTabClick(status);
-        break;
-    }
-    
-    if (targetTab) {
-      targetTab.focus();
-      handleTabClick(targetTab.dataset.status);
-    }
-  }
-
-  // Debounced tab switching to prevent rapid API calls
-  let debouncedLoadTimeout;
-  
-  function handleTabClickDebounced(e) {
-    tabs.forEach(t => t.classList.remove('active'));
-    e.target.classList.add('active');
-    const newStatus = e.target.dataset.status;
-    
-    // Update bulk actions visibility
-    updateBulkActionsVisibility(newStatus);
-    
-    // Check if we have cached data
-    const cachedItems = cache.get(newStatus);
-    if (cachedItems) {
-      console.log(`[Tab] Loading ${newStatus} from cache (${cachedItems.length} items)`);
-      currentStatus = newStatus;
-      // Load immediately from cache, no delay needed
-      loadItems();
-      return;
-    } else {
-      console.log(`[Tab] Loading ${newStatus} from API`);
-      // Show loading state immediately for better UX
-      itemsList.innerHTML = '<div class="loading"><div class="spinner"></div><p>Lijst laden...</p></div>';
-    }
-    
-    currentStatus = newStatus;
-    
-    clearTimeout(debouncedLoadTimeout);
-    debouncedLoadTimeout = setTimeout(() => {
-      loadItems();
-    }, 100);
-  }
-
-  function updateBulkActionsVisibility(status) {
-    // Update delete button text and visibility based on current tab
-    if (deleteTabItemsBtn && deleteTabItemsBtnText) {
-      if (status === 'open') {
-        deleteTabItemsBtnText.textContent = 'Verwijder alle verzoeken';
-        deleteTabItemsBtn.style.display = 'inline-flex';
-        console.log('[Bulk Actions] Showing delete button for open items');
-      } else if (status === 'closed') {
-        deleteTabItemsBtnText.textContent = 'Verwijder bestelde items';
-        deleteTabItemsBtn.style.display = 'inline-flex';
-        console.log('[Bulk Actions] Showing delete button for closed items');
-      } else if (status === 'deleted') {
-        deleteTabItemsBtnText.textContent = 'Prullenbak legen';
-        deleteTabItemsBtn.style.display = 'inline-flex';
-        console.log('[Bulk Actions] Showing delete button for deleted items');
-      } else {
-        deleteTabItemsBtn.style.display = 'none';
-        console.log('[Bulk Actions] Hiding delete button');
+        await this.apiRequest('?action=add', { params: formData });
+        
+        this.showNotification('Product toegevoegd!', 'success');
+        this.clearForm();
+        
+        // Invalidate cache and reload
+        this.invalidateCache('open');
+        this.loadItems();
+        
+      } catch (error) {
+        console.error('[handleSubmit] Error:', error);
+        this.showNotification(error.message, 'error');
+      } finally {
+        this.formLoading = false;
       }
-    }
-
-    // Show copyBtn only on 'open' tab
-    if (copyBtn) {
-      if (status === 'open') {
-        copyBtn.style.display = 'inline-flex';
-        console.log('[Bulk Actions] Showing copy button');
-      } else {
-        copyBtn.style.display = 'none';
-        console.log('[Bulk Actions] Hiding copy button');
-      }
-    }
-  }
-
-  async function setItemStatus(id, status) {
-    console.log('[setItemStatus] Called with:', { id, status, hasAdminCode: !!adminCode });
-    const requiresAdmin = status === 'deleted';
+    },
     
-    if (requiresAdmin && !adminCode) {
-      console.log('[setItemStatus] Admin code required, opening modal');
-      pendingAdminAction = { type: 'setStatus', id, status };
-      openAdminModal();
-      return;
-    }
-
-    try {
-      console.log('[setItemStatus] Making API request:', { id, status, adminCode: requiresAdmin ? adminCode : 'none' });
-      await apiRequest('?action=setStatus', {
-        body: { id, status, adminCode: requiresAdmin ? adminCode : undefined }
-      });
-      console.log('[setItemStatus] API request successful, reloading items');
+    clearForm() {
+      this.form = {
+        ahUrl: '',
+        item: '',
+        imageUrl: '',
+        quantity: 1,
+        substituteFor: '',
+        name: ''
+      };
+    },
+    
+    // Item Actions
+    async setItemStatus(id, status, buttonEl) {
+      console.log('[setItemStatus] Setting item', id, 'to', status);
       
-      // Invalidate all relevant caches
-      cache.invalidate('open');
-      cache.invalidate('closed');
-      cache.invalidate('deleted');
+      const requiresAdmin = status === 'deleted';
       
-      loadItems();
-    } catch (error) {
-      console.error('[setItemStatus] Error:', error);
-      showMessage(listMessage, error.message, 'error');
-      if (error.message.includes('admin')) {
-        adminCode = null;
-      }
-    }
-  }
-
-  function setButtonLoading(button, isLoading) {
-    if (isLoading) {
-      button.classList.add('loading');
-      button.disabled = true;
-    } else {
-      button.classList.remove('loading');
-      button.disabled = false;
-    }
-  }
-
-  async function handleCopyText() {
-    setButtonLoading(copyBtn, true);
-    try {
-      // Try cache first
-      let items = cache.get('open');
-      
-      if (!items) {
-        const data = await apiRequest('?action=list&status=open');
-        items = data.items || [];
-        cache.set('open', items);
-      }
-
-      if (items.length === 0) {
-        showMessage(listMessage, 'Geen open items om te kopiëren', 'error');
+      if (requiresAdmin && !this.adminCode) {
+        this.pendingAdminAction = { type: 'setStatus', id, status };
+        this.openAdminModal();
         return;
       }
-
-      const text = items.map(item => {
-        let line = '';
-        if (item.quantity) {
-          line += `${item.quantity}x `;
-        }
-        line += item.item;
-        if (item.substituteFor) {
-          line += ` (in plaats van ${item.substituteFor})`;
-        }
-        line += ` - ${item.name}`;
-        return line;
-      }).join('\n');
-
-      await navigator.clipboard.writeText(text);
-      showMessage(listMessage, 'Lijst gekopieerd naar klembord!', 'success');
-    } catch (error) {
-      showMessage(listMessage, 'Kopiëren mislukt: ' + error.message, 'error');
-    } finally {
-      setButtonLoading(copyBtn, false);
-    }
-  }
-
-  function getStoredAdminCode() {
-    try {
-      const stored = localStorage.getItem(ADMIN_CODE_STORAGE_KEY);
-      if (!stored) return null;
       
-      const { code, expiry } = JSON.parse(stored);
-      if (Date.now() > expiry) {
-        localStorage.removeItem(ADMIN_CODE_STORAGE_KEY);
+      if (buttonEl) buttonEl.classList.add('loading');
+      
+      try {
+        await this.apiRequest('?action=setStatus', {
+          params: {
+            id,
+            status,
+            adminCode: requiresAdmin ? this.adminCode : undefined
+          }
+        });
+        
+        // Invalidate all caches
+        this.invalidateCache('open');
+        this.invalidateCache('closed');
+        this.invalidateCache('deleted');
+        
+        await this.loadItems();
+      } catch (error) {
+        console.error('[setItemStatus] Error:', error);
+        this.showNotification(error.message, 'error');
+        if (error.message.includes('admin')) {
+          this.adminCode = null;
+        }
+      } finally {
+        if (buttonEl) buttonEl.classList.remove('loading');
+      }
+    },
+    
+    deleteItem(id, buttonEl) {
+      console.log('[deleteItem] Deleting item:', id);
+      
+      const storedCode = this.getStoredAdminCode();
+      if (storedCode) {
+        this.adminCode = storedCode;
+        if (confirm('Weet je zeker dat je dit item wilt verwijderen?')) {
+          this.setItemStatus(id, 'deleted', buttonEl);
+        }
+      } else {
+        this.pendingAdminAction = { type: 'deleteItem', id };
+        this.openAdminModal();
+      }
+    },
+    
+    // Bulk Actions
+    async handleDeleteTabItems() {
+      let action;
+      if (this.currentStatus === 'open') action = 'deleteOpen';
+      else if (this.currentStatus === 'closed') action = 'deleteClosed';
+      else if (this.currentStatus === 'deleted') action = 'permanentDelete';
+      
+      const storedCode = this.getStoredAdminCode();
+      if (storedCode) {
+        this.adminCode = storedCode;
+        
+        let confirmMessage;
+        if (action === 'deleteOpen') {
+          confirmMessage = 'Weet je zeker dat je alle open items wilt verwijderen?\n\nDeze items worden verplaatst naar de prullenbak.';
+        } else if (action === 'deleteClosed') {
+          confirmMessage = 'Weet je zeker dat je alle bestelde items wilt verwijderen?\n\nDeze items worden verplaatst naar de prullenbak.';
+        } else if (action === 'permanentDelete') {
+          confirmMessage = '⚠️ WAARSCHUWING: Dit verwijdert alle items in de prullenbak PERMANENT!\n\nDeze actie kan NIET ongedaan worden gemaakt.\n\nWeet je zeker dat je door wilt gaan?';
+        }
+        
+        if (confirm(confirmMessage)) {
+          await this.executeBulkAction(action);
+        }
+      } else {
+        this.pendingAdminAction = { type: 'bulk', action };
+        this.openAdminModal();
+      }
+    },
+    
+    async executeBulkAction(action) {
+      this.bulkLoading = true;
+      
+      try {
+        await this.apiRequest(`?action=bulk&bulkAction=${action}`, {
+          params: { adminCode: this.adminCode }
+        });
+        
+        const successMessage = action === 'permanentDelete' ? 'Prullenbak geleegd' : 'Items verwijderd';
+        this.showNotification(successMessage, 'success');
+        
+        this.clearCache();
+        await this.loadItems();
+      } catch (error) {
+        console.error('[executeBulkAction] Error:', error);
+        this.showNotification(error.message, 'error');
+      } finally {
+        this.bulkLoading = false;
+      }
+    },
+    
+    // Copy to Clipboard
+    async handleCopyText() {
+      this.copyLoading = true;
+      
+      const startTime = Date.now();
+      
+      try {
+        let items = this.getCachedItems('open') || this.items.open;
+        
+        if (!items || items.length === 0) {
+          const data = await this.apiRequest('?action=list&status=open');
+          items = data.items || [];
+        }
+        
+        if (items.length === 0) {
+          this.showNotification('Geen open items om te kopiëren', 'error');
+          this.copyLoading = false;
+          return;
+        }
+        
+        const text = items.map(item => {
+          let line = '';
+          if (item.quantity) line += `${item.quantity}x `;
+          line += item.item;
+          if (item.substituteFor) line += ` (in plaats van ${item.substituteFor})`;
+          line += ` - ${item.name}`;
+          return line;
+        }).join('\n');
+        
+        await navigator.clipboard.writeText(text);
+        this.showNotification('Lijst gekopieerd naar klembord!', 'success');
+      } catch (error) {
+        this.showNotification('Kopiëren mislukt: ' + error.message, 'error');
+      } finally {
+        // Ensure minimum loading time of 800ms for better UX
+        const elapsed = Date.now() - startTime;
+        if (elapsed < 800) {
+          setTimeout(() => {
+            this.copyLoading = false;
+          }, 800 - elapsed);
+        } else {
+          this.copyLoading = false;
+        }
+      }
+    },
+    
+    // Admin Modal
+    openAdminModal() {
+      this.showAdminModal = true;
+      this.$nextTick(() => {
+        this.$refs.adminInput?.focus();
+      });
+    },
+    
+    closeAdminModal() {
+      this.showAdminModal = false;
+      this.adminCodeInput = '';
+      this.pendingAdminAction = null;
+    },
+    
+    async confirmAdminAction() {
+      const code = this.adminCodeInput.trim();
+      
+      if (!code) return;
+      
+      this.adminCode = code;
+      this.storeAdminCode(code);
+      
+      const actionToExecute = this.pendingAdminAction;
+      this.closeAdminModal();
+      
+      if (!actionToExecute) return;
+      
+      if (actionToExecute.type === 'bulk') {
+        await this.executeBulkAction(actionToExecute.action);
+      } else if (actionToExecute.type === 'deleteItem') {
+        await this.setItemStatus(actionToExecute.id, 'deleted');
+      } else if (actionToExecute.type === 'setStatus') {
+        await this.setItemStatus(actionToExecute.id, actionToExecute.status);
+      }
+    },
+    
+    // Admin Code Storage
+    getStoredAdminCode() {
+      try {
+        const stored = localStorage.getItem(this.ADMIN_CODE_STORAGE_KEY);
+        if (!stored) return null;
+        
+        const { code, expiry } = JSON.parse(stored);
+        if (Date.now() > expiry) {
+          localStorage.removeItem(this.ADMIN_CODE_STORAGE_KEY);
+          return null;
+        }
+        
+        return code;
+      } catch (e) {
+        console.error('[getStoredAdminCode] Error:', e);
         return null;
       }
-      
-      return code;
-    } catch (e) {
-      console.error('[getStoredAdminCode] Error:', e);
-      return null;
-    }
-  }
-  
-  function storeAdminCode(code) {
-    try {
-      const expiry = Date.now() + (ADMIN_CODE_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
-      localStorage.setItem(ADMIN_CODE_STORAGE_KEY, JSON.stringify({ code, expiry }));
-      console.log('[storeAdminCode] Admin code stored for 30 days');
-    } catch (e) {
-      console.error('[storeAdminCode] Error:', e);
-    }
-  }
-  
-  function handleDeleteTabItems() {
-    // Determine which delete action to use based on current tab
-    let action;
-    if (currentStatus === 'open') {
-      action = 'deleteOpen';
-    } else if (currentStatus === 'closed') {
-      action = 'deleteClosed';
-    } else if (currentStatus === 'deleted') {
-      action = 'permanentDelete';
-    } else {
-      console.error('[handleDeleteTabItems] Unknown status:', currentStatus);
-      return;
-    }
+    },
     
-    console.log('[handleDeleteTabItems] Calling requestAdminAction with:', action);
-    requestAdminAction(action);
-  }
-
-  function requestAdminAction(action) {
-    console.log('[requestAdminAction] Called with:', action);
-    const bulkAction = action;
-    console.log('[requestAdminAction] Setting pending action:', { type: 'bulk', action: bulkAction });
-    pendingAdminAction = { type: 'bulk', action: bulkAction };
-    
-    // Check if we have a stored admin code
-    const storedCode = getStoredAdminCode();
-    if (storedCode) {
-      console.log('[requestAdminAction] Using stored admin code');
-      adminCode = storedCode;
-      
-      // Show confirmation dialog instead of admin modal
-      let confirmMessage;
-      if (bulkAction === 'deleteOpen') {
-        confirmMessage = `Weet je zeker dat je alle open items wilt verwijderen?\n\nDeze items worden verplaatst naar de prullenbak.`;
-      } else if (bulkAction === 'deleteClosed') {
-        confirmMessage = `Weet je zeker dat je alle bestelde items wilt verwijderen?\n\nDeze items worden verplaatst naar de prullenbak.`;
-      } else if (bulkAction === 'deleteAll') {
-        confirmMessage = `Weet je zeker dat je alle open en bestelde items wilt verwijderen?\n\nDeze items worden verplaatst naar de prullenbak.`;
-      } else if (bulkAction === 'permanentDelete') {
-        confirmMessage = `⚠️ WAARSCHUWING: Dit verwijdert alle items in de prullenbak PERMANENT!\n\nDeze actie kan NIET ongedaan worden gemaakt.\n\nWeet je zeker dat je door wilt gaan?`;
+    storeAdminCode(code) {
+      try {
+        const expiry = Date.now() + (this.ADMIN_CODE_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+        localStorage.setItem(this.ADMIN_CODE_STORAGE_KEY, JSON.stringify({ code, expiry }));
+        console.log('[storeAdminCode] Admin code stored for 30 days');
+      } catch (e) {
+        console.error('[storeAdminCode] Error:', e);
       }
+    },
+    
+    // Notification System
+    showNotification(text, type = 'success', duration = 4000) {
+      const index = this.notifications.length;
+      const notification = {
+        id: Date.now() + Math.random(),
+        text,
+        type,
+        hiding: false,
+        index: index
+      };
       
-      if (confirm(confirmMessage)) {
-        executeAdminAction(pendingAdminAction);
-      } else {
-        pendingAdminAction = null;
-      }
-    } else {
-      openAdminModal();
-    }
-  }
-
-  function openAdminModal() {
-    console.log('[Modal] Opening admin modal');
-    adminModal.classList.remove('hidden');
-    adminCodeInput.focus();
-    
-    // Trap focus within modal
-    const focusableElements = adminModal.querySelectorAll('button, input, [tabindex]:not([tabindex="-1"])');
-    const firstElement = focusableElements[0];
-    const lastElement = focusableElements[focusableElements.length - 1];
-    
-    adminModal.addEventListener('keydown', function trapFocus(e) {
-      if (e.key === 'Tab') {
-        if (e.shiftKey) {
-          if (document.activeElement === firstElement) {
-            e.preventDefault();
-            lastElement.focus();
-          }
-        } else {
-          if (document.activeElement === lastElement) {
-            e.preventDefault();
-            firstElement.focus();
-          }
-        }
-      }
+      this.notifications.push(notification);
       
-      if (e.key === 'Escape') {
-        closeAdminModal();
-      }
-    });
+      // Auto-remove after duration
+      setTimeout(() => {
+        this.hideNotification(notification.id);
+      }, duration);
+    },
     
-    // Store reference to remove later
-    adminModal._focusTrapHandler = trapFocus;
-  }
-
-  function closeAdminModal() {
-    adminModal.classList.add('hidden');
-    adminCodeInput.value = '';
-    // Remove focus trap handler
-    adminModal.removeEventListener('keydown', adminModal._focusTrapHandler);
-    adminModal._focusTrapHandler = null;
-  }
-
-  async function executeAdminAction(actionToExecute) {
-    if (!actionToExecute) {
-      console.log('[executeAdminAction] No action to execute');
-      return;
-    }
-
-    console.log('[executeAdminAction] Processing action:', actionToExecute);
-
-    const targetBtn = actionToExecute.type === 'bulk' 
-      ? deleteTabItemsBtn
-      : actionToExecute.type === 'deleteItem' 
-        ? document.querySelector(`.delete-btn[data-id="${actionToExecute.id}"]`)
-        : null;
-
-    if (targetBtn) {
-      setButtonLoading(targetBtn, true);
-    }
-
-    try {
-      if (actionToExecute.type === 'bulk') {
-        console.log('[executeAdminAction] Bulk action:', actionToExecute.action);
-        let endpoint;
-        if (actionToExecute.action === 'deleteOpen') {
-          endpoint = '?action=bulk&bulkAction=deleteOpen';
-        } else if (actionToExecute.action === 'deleteClosed') {
-          endpoint = '?action=bulk&bulkAction=deleteClosed';
-        } else if (actionToExecute.action === 'deleteAll') {
-          endpoint = '?action=bulk&bulkAction=deleteAll';
-        } else if (actionToExecute.action === 'permanentDelete') {
-          endpoint = '?action=bulk&bulkAction=permanentDelete';
-        }
+    hideNotification(id) {
+      const notification = this.notifications.find(n => n.id === id);
+      if (notification) {
+        notification.hiding = true;
         
-        console.log('[executeAdminAction] Calling API with endpoint:', endpoint);
-        await apiRequest(endpoint, {
-          body: { adminCode }
+        // Remove from DOM after fade animation
+        setTimeout(() => {
+          this.notifications = this.notifications.filter(n => n.id !== id);
+        }, 300);
+      }
+    },
+    
+    // Formatting Helpers
+    formatDate(isoString) {
+      if (!isoString) return '';
+      try {
+        const date = new Date(isoString);
+        return date.toLocaleDateString('nl-NL', {
+          day: 'numeric',
+          month: 'long',
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false
         });
-        
-        const successMessage = actionToExecute.action === 'permanentDelete' 
-          ? 'Prullenbak geleegd' 
-          : 'Items verwijderd';
-        showMessage(listMessage, successMessage, 'success');
-        
-        // Clear all caches after bulk operations
-        cache.clear();
-        loadItems();
-      } else if (actionToExecute.type === 'deleteItem') {
-        console.log('[executeAdminAction] Delete item:', actionToExecute.id);
-        await apiRequest('?action=setStatus', {
-          body: { id: actionToExecute.id, status: 'deleted', adminCode }
+      } catch {
+        return isoString;
+      }
+    },
+    
+    formatDateOnly(isoString) {
+      if (!isoString) return '';
+      try {
+        const date = new Date(isoString);
+        return date.toLocaleDateString('nl-NL', {
+          day: '2-digit',
+          month: '2-digit'
         });
-        
-        showMessage(listMessage, 'Item verwijderd', 'success');
-        
-        // Invalidate relevant caches
-        cache.invalidate('open');
-        cache.invalidate('closed');
-        cache.invalidate('deleted');
-        
-        loadItems();
+      } catch {
+        return isoString;
       }
-    } catch (error) {
-      console.error('[executeAdminAction] Error:', error);
-      showMessage(listMessage, error.message, 'error');
-    } finally {
-      if (targetBtn) {
-        setButtonLoading(targetBtn, false);
-      }
-      pendingAdminAction = null;
     }
-  }
-  
-  async function confirmAdminAction() {
-    const code = adminCodeInput.value.trim();
-    console.log('[confirmAdminAction] Admin code entered:', code ? '***' : 'empty');
-    
-    if (!code) {
-      console.log('[confirmAdminAction] No code entered, returning');
-      return;
-    }
-
-    adminCode = code;
-    
-    // Store the admin code for 30 days
-    storeAdminCode(code);
-    
-    // Store the action before closing modal
-    const actionToExecute = pendingAdminAction;
-    closeAdminModal();
-
-    if (!actionToExecute) {
-      console.log('[confirmAdminAction] No pending action, returning');
-      return;
-    }
-
-    await executeAdminAction(actionToExecute);
-    pendingAdminAction = null;
-  }
-
-  document.addEventListener('DOMContentLoaded', init);
-})();
+  };
+}
