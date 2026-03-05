@@ -29,6 +29,13 @@ function groceryApp() {
       name: ''
     },
     
+    // Product Search
+    searchQuery: '',
+    searchResults: [],
+    searchLoading: false,
+    showSearchResults: false,
+    searchDebounceTimer: null,
+    
     // Messages
     formMessage: { text: '', type: '' },
     listMessage: { text: '', type: '' },
@@ -50,6 +57,29 @@ function groceryApp() {
     // Constants
     ADMIN_CODE_STORAGE_KEY: 'grocery_admin_code',
     ADMIN_CODE_EXPIRY_DAYS: 30,
+    
+    // Team Members
+    teamMembers: [
+      'Remco Heijnen',
+      'Anne van der Sluijs',
+      'Elde Janssen',
+      'Steve Vaneeckhout',
+      'Michel van der Put',
+      'Sabien Roks',
+      'Chiara Poulssen',
+      'Sander van Dijk',
+      'Peggy Dolmans',
+      'Julian de Moor',
+      'Eddie van Leuven',
+      'Maikel Pijpers',
+      'Daniëlle Walraven',
+      'Erik de Vos',
+      'Roel Walraven',
+      'Richard Bonfrère',
+      'Percy Dobbelsteyn',
+      'Jean-Pierre Schreurs',
+      'Eddie van Leuven'
+    ],
     
     // Computed
     get currentItems() {
@@ -757,6 +787,69 @@ function groceryApp() {
       } catch {
         return isoString;
       }
+    },
+    
+    // Product Search Methods
+    async handleSearchInput() {
+      clearTimeout(this.searchDebounceTimer);
+      
+      const query = this.searchQuery.trim();
+      
+      if (query.length < 2) {
+        this.searchResults = [];
+        this.showSearchResults = false;
+        return;
+      }
+      
+      this.searchDebounceTimer = setTimeout(async () => {
+        await this.searchProducts(query);
+      }, 300);
+    },
+    
+    async searchProducts(query) {
+      console.log('[searchProducts] Searching for:', query);
+      this.searchLoading = true;
+      
+      try {
+        const results = await appieApi.searchProducts(query);
+        this.searchResults = results;
+        this.showSearchResults = results.length > 0;
+        console.log('[searchProducts] Found', results.length, 'products');
+      } catch (error) {
+        console.error('[searchProducts] Error:', error);
+        this.showNotification('Zoeken mislukt: ' + error.message, 'error');
+        this.searchResults = [];
+        this.showSearchResults = false;
+      } finally {
+        this.searchLoading = false;
+      }
+    },
+    
+    selectProduct(product) {
+      console.log('[selectProduct] Selected:', product.title);
+      
+      this.form.item = product.title;
+      this.form.ahUrl = product.url;
+      this.form.imageUrl = product.imageUrl || '';
+      
+      this.searchQuery = '';
+      this.searchResults = [];
+      this.showSearchResults = false;
+      
+      this.$nextTick(() => {
+        const quantityInput = document.getElementById('quantity');
+        if (quantityInput) quantityInput.focus();
+      });
+    },
+    
+    clearSearch() {
+      this.searchQuery = '';
+      this.searchResults = [];
+      this.showSearchResults = false;
+    },
+    
+    formatPrice(price) {
+      return appieApi.formatPrice(price);
     }
   };
 }

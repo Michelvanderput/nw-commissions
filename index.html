@@ -36,43 +36,99 @@
         <form @submit.prevent="handleSubmit" class="grocery-form" novalidate>
           <fieldset>
             <legend class="visually-hidden">Product toevoegen aan boodschappenlijst</legend>
-          <div class="form-group">
-            <label for="ahUrl">AH Link *</label>
-            <input type="url" id="ahUrl" x-model="form.ahUrl" required placeholder="https://www.ah.nl/producten/product/...">
+          
+          <div class="form-group search-group">
+            <label for="productSearch">Zoek product bij Albert Heijn</label>
+            <div class="search-input-wrapper">
+              <input 
+                type="text" 
+                id="productSearch" 
+                x-model="searchQuery" 
+                @input="handleSearchInput"
+                @focus="searchQuery.length >= 2 && searchResults.length > 0 ? showSearchResults = true : null"
+                placeholder="Zoek een product..."
+                autocomplete="off">
+              <div class="search-spinner" x-show="searchLoading">
+                <div class="spinner-small"></div>
+              </div>
+            </div>
+            
+            <div class="search-results" x-show="showSearchResults" @click.away="showSearchResults = false">
+              <template x-for="product in searchResults" :key="product.id">
+                <div class="search-result-item" @click="selectProduct(product)">
+                  <img :src="product.imageUrl" :alt="product.title" class="search-result-image" @error="$el.style.display='none'">
+                  <div class="search-result-content">
+                    <div class="search-result-title" x-text="product.title"></div>
+                    <div class="search-result-meta">
+                      <span x-show="product.brand" x-text="product.brand"></span>
+                      <span x-show="product.unitSize" x-text="product.unitSize"></span>
+                      <span class="search-result-price" x-text="formatPrice(product.price)"></span>
+                    </div>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </div>
+          
+          <!-- Product Preview -->
+          <div x-show="form.item && form.ahUrl" class="product-preview">
+            <div class="product-preview-header">
+              <span>Geselecteerd product</span>
+              <button type="button" @click="clearForm()" class="btn-clear-product">✕</button>
+            </div>
+            <div class="product-preview-content">
+              <img x-show="form.imageUrl" :src="form.imageUrl" :alt="form.item" class="product-preview-image" @error="$el.style.display='none'">
+              <div class="product-preview-info">
+                <div class="product-preview-title" x-text="form.item"></div>
+                <a x-show="form.ahUrl" :href="form.ahUrl" target="_blank" rel="noopener" class="product-preview-link">Bekijk op AH.nl →</a>
+              </div>
+            </div>
           </div>
 
-          <div class="form-group">
-            <label for="item">Product naam *</label>
-            <input type="text" id="item" x-model="form.item" required placeholder="Welk product?">
+          <div x-show="form.item && form.ahUrl">
+            <div class="form-group">
+              <label for="quantity">Hoeveelheid</label>
+              <input type="number" id="quantity" x-model="form.quantity" min="1" max="10" placeholder="1" @input="form.quantity = Math.max(1, Math.min(10, parseInt(form.quantity) || 1))">
+            </div>
+
+            <div class="form-group">
+              <label for="substituteFor">Vervangt (optioneel)</label>
+              <input type="text" id="substituteFor" x-model="form.substituteFor" placeholder="In plaats van iets anders?">
+            </div>
+
+            <div class="form-group">
+              <label for="name">Jouw naam *</label>
+              <select id="name" x-model="form.name" required class="form-select">
+                <option value="">Selecteer je naam...</option>
+                <option value="Remco Heijnen">Remco Heijnen</option>
+                <option value="Anne van der Sluijs">Anne van der Sluijs</option>
+                <option value="Elde Janssen">Elde Janssen</option>
+                <option value="Steve Vaneeckhout">Steve Vaneeckhout</option>
+                <option value="Michel van der Put">Michel van der Put</option>
+                <option value="Sabien Roks">Sabien Roks</option>
+                <option value="Chiara Poulssen">Chiara Poulssen</option>
+                <option value="Sander van Dijk">Sander van Dijk</option>
+                <option value="Peggy Dolmans">Peggy Dolmans</option>
+                <option value="Julian de Moor">Julian de Moor</option>
+                <option value="Eddie van Leuven">Eddie van Leuven</option>
+                <option value="Maikel Pijpers">Maikel Pijpers</option>
+                <option value="Daniëlle Walraven">Daniëlle Walraven</option>
+                <option value="Erik de Vos">Erik de Vos</option>
+                <option value="Roel Walraven">Roel Walraven</option>
+                <option value="Richard Bonfrère">Richard Bonfrère</option>
+                <option value="Percy Dobbelsteyn">Percy Dobbelsteyn</option>
+                <option value="Jean-Pierre Schreurs">Jean-Pierre Schreurs</option>
+              </select>
+            </div>
           </div>
 
-          <div class="form-group">
-            <label for="imageUrl">Afbeelding url (optioneel)</label>
-            <input type="url" id="imageUrl" x-model="form.imageUrl" placeholder="Optioneel - handmatig toevoegen">
-          </div>
-
-          <div class="form-group">
-            <label for="quantity">Hoeveelheid</label>
-            <input type="number" id="quantity" x-model="form.quantity" min="1" max="10" placeholder="1" @input="form.quantity = Math.max(1, Math.min(10, parseInt(form.quantity) || 1))">
-          </div>
-
-          <div class="form-group">
-            <label for="substituteFor">Vervangt</label>
-            <input type="text" id="substituteFor" x-model="form.substituteFor" placeholder="In plaats van iets anders?">
-          </div>
-
-          <div class="form-group">
-            <label for="name">Jouw naam *</label>
-            <input type="text" id="name" x-model="form.name" required placeholder="Jouw naam">
-          </div>
-
-          <div class="form-buttons">
+          <div class="form-buttons" x-show="form.item && form.ahUrl">
             <button type="submit" class="btn btn-primary" :disabled="formLoading" :class="{'loading': formLoading}">
               <span class="btn-text">Toevoegen aan lijst</span>
               <span class="btn-loader">Opslaan...</span>
             </button>
             <button type="button" class="btn btn-secondary" @click="clearForm" :disabled="formLoading">
-              <span class="btn-text">Legen</span>
+              <span class="btn-text">Annuleren</span>
             </button>
           </div>
           </fieldset>
@@ -210,6 +266,7 @@
   </div>
 
   <script src="config.js"></script>
+  <script src="appie-api.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
