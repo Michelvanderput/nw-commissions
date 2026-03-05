@@ -63,7 +63,26 @@
 
           <div class="form-group">
             <label for="name">Jouw naam *</label>
-            <input type="text" id="name" x-model="form.name" required placeholder="Jouw naam">
+            <select id="name" x-model="form.name" required>
+              <option value="">Kies je naam...</option>
+              <option value="Anne">Anne</option>
+              <option value="Chiara">Chiara</option>
+              <option value="Christiaan">Christiaan</option>
+              <option value="Eddie">Eddie</option>
+              <option value="Elde">Elde</option>
+              <option value="Erik">Erik</option>
+              <option value="Jean-Pierre">Jean-Pierre</option>
+              <option value="Julian">Julian</option>
+              <option value="Michel">Michel</option>
+              <option value="Peggy">Peggy</option>
+              <option value="Percy">Percy</option>
+              <option value="Remco">Remco</option>
+              <option value="Richard">Richard</option>
+              <option value="Roel">Roel</option>
+              <option value="Sabien">Sabien</option>
+              <option value="Sander">Sander</option>
+              <option value="Steve">Steve</option>
+            </select>
           </div>
 
           <div x-show="formMessage.text" :class="'message ' + formMessage.type" x-text="formMessage.text"></div>
