@@ -1,7 +1,52 @@
-// Appie API Service - Backend proxy implementation
+// Appie API Service - Direct API implementation
 class AppieApiService {
   constructor() {
-    this.apiBaseUrl = typeof CONFIG !== 'undefined' ? CONFIG.API_BASE_URL : '';
+    this.baseUrl = 'https://api.ah.nl';
+    this.accessToken = null;
+    this.tokenExpiry = null;
+  }
+
+  async getAnonymousToken() {
+    // Return cached token if still valid
+    if (this.accessToken && this.tokenExpiry && Date.now() < this.tokenExpiry) {
+      console.log('[Appie API] Using cached token');
+      return this.accessToken;
+    }
+
+    try {
+      console.log('[Appie API] Requesting new anonymous token...');
+      
+      const response = await fetch(`${this.baseUrl}/mobile-auth/v1/auth/token/anonymous`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          clientId: 'appie'
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Token request failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+      this.accessToken = data.access_token;
+      
+      if (!this.accessToken) {
+        throw new Error('No access token in response');
+      }
+
+      // Token expires in 1 hour, cache for 55 minutes
+      this.tokenExpiry = Date.now() + (55 * 60 * 1000);
+
+      console.log('[Appie API] Token obtained successfully');
+      return this.accessToken;
+      
+    } catch (error) {
+      console.error('[Appie API] Token error:', error);
+      throw error;
+    }
   }
 
   async searchProducts(query, limit = 10) {
@@ -12,24 +57,28 @@ class AppieApiService {
     try {
       console.log('[Appie API] Searching for:', query);
       
+      // Get token first
+      const token = await this.getAnonymousToken();
+      
       const params = new URLSearchParams({
         query: query.trim(),
-        limit: String(limit),
-        _t: Date.now() // Cache busting parameter
+        sortOn: 'RELEVANCE',
+        page: '0',
+        size: String(limit)
       });
 
-      const url = `${this.apiBaseUrl}?action=ahSearch&${params.toString()}`;
+      const url = `${this.baseUrl}/mobile-services/product/search/v2?${params.toString()}`;
       
-      console.log('[Appie API] Full URL:', url);
-      console.log('[Appie API] Base URL:', this.apiBaseUrl);
+      console.log('[Appie API] Search URL:', url);
       
       const response = await fetch(url, {
         method: 'GET',
-        cache: 'no-store' // Disable browser caching
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
       });
 
       console.log('[Appie API] Response status:', response.status);
-      console.log('[Appie API] Response ok:', response.ok);
 
       if (!response.ok) {
         throw new Error(`Product search failed: ${response.status}`);
@@ -37,18 +86,26 @@ class AppieApiService {
 
       const data = await response.json();
       
-      console.log('[Appie API] Response data:', data);
-      
-      if (!data.ok) {
-        throw new Error(data.error || 'Search failed');
-      }
-      
       if (!data.products || !Array.isArray(data.products)) {
         return [];
       }
 
-      console.log('[Appie API] Found', data.products.length, 'products');
-      return data.products;
+      const products = data.products.map(product => ({
+        id: product.webshopId || 0,
+        title: product.title || 'Onbekend product',
+        brand: product.brand || '',
+        imageUrl: product.images?.[0]?.url || null,
+        price: product.priceBeforeBonus || product.price?.now || 0,
+        oldPrice: product.priceBeforeBonus || 0,
+        unitSize: product.salesUnitSize || '',
+        isBonus: product.discount?.isBonus || false,
+        bonusMechanism: product.discount?.bonusMechanism || '',
+        category: product.taxonomies?.[0]?.name || '',
+        url: `https://www.ah.nl/producten/product/wi${product.webshopId || 0}`
+      }));
+
+      console.log('[Appie API] Found', products.length, 'products');
+      return products;
       
     } catch (error) {
       console.error('[Appie API] Search error:', error);
