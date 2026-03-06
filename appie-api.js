@@ -20,16 +20,24 @@ class AppieApiService {
 
       const url = `${this.apiBaseUrl}?action=ahSearch&${params.toString()}`;
       
+      console.log('[Appie API] Full URL:', url);
+      console.log('[Appie API] Base URL:', this.apiBaseUrl);
+      
       const response = await fetch(url, {
         method: 'GET',
         cache: 'no-store' // Disable browser caching
       });
+
+      console.log('[Appie API] Response status:', response.status);
+      console.log('[Appie API] Response ok:', response.ok);
 
       if (!response.ok) {
         throw new Error(`Product search failed: ${response.status}`);
       }
 
       const data = await response.json();
+      
+      console.log('[Appie API] Response data:', data);
       
       if (!data.ok) {
         throw new Error(data.error || 'Search failed');
