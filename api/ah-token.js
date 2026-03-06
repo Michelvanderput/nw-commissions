@@ -10,7 +10,10 @@ export default async function handler(req, res) {
   }
 
   try {
-    const response = await fetch('https://api.ah.nl/mobile-auth/v1/auth/token/anonymous', {
+    // Use dynamic import for node-fetch if fetch is not available
+    const fetchFn = globalThis.fetch || (await import('node-fetch')).default;
+    
+    const response = await fetchFn('https://api.ah.nl/mobile-auth/v1/auth/token/anonymous', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -21,8 +24,11 @@ export default async function handler(req, res) {
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[AH Token Proxy] Error response:', response.status, errorText);
       return res.status(response.status).json({ 
-        error: `Token request failed: ${response.status}` 
+        error: `Token request failed: ${response.status}`,
+        details: errorText
       });
     }
 
@@ -31,6 +37,9 @@ export default async function handler(req, res) {
     
   } catch (error) {
     console.error('[AH Token Proxy] Error:', error);
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ 
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
   }
 }
