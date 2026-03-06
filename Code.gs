@@ -36,27 +36,34 @@ function doPost(e) {
 function handleRequest(e) {
   const action = e.parameter.action || 'list';
   
-  // Skip IP check for AH API proxy actions
-  const skipIPCheck = ['ahToken', 'ahSearch'].includes(action);
-  
-  if (!skipIPCheck) {
-    const clientIP = e.parameter.ip || 'unknown';
-    
-    // Check IP whitelist
-    if (!ALLOWED_IPS.includes(clientIP)) {
-      Logger.log('Access denied for IP: ' + clientIP);
-      return ContentService
-        .createTextOutput(JSON.stringify({ 
-          ok: false, 
-          error: 'Access denied - IP not authorized' 
-        }))
-        .setMimeType(ContentService.MimeType.JSON);
-    }
-  }
-  
   try {
     let result;
     
+    // Handle AH API proxy actions first (no IP check needed)
+    if (action === 'ahToken') {
+      result = handleAHToken(e);
+      return jsonResponse(result);
+    }
+    
+    if (action === 'ahSearch') {
+      result = handleAHSearch(e);
+      return jsonResponse(result);
+    }
+    
+    // For all other actions, check IP whitelist
+    const clientIP = e.parameter.ip || 'unknown';
+    
+    if (!ALLOWED_IPS.includes(clientIP)) {
+      Logger.log('Access denied for IP: ' + clientIP + ' for action: ' + action);
+      return ContentService
+        .createTextOutput(JSON.stringify({ 
+          ok: false, 
+          error: 'Access denied - IP not authorized'
+        }))
+        .setMimeType(ContentService.MimeType.JSON);
+    }
+    
+    // Handle other actions
     switch (action) {
       case 'add':
         result = handleAdd(e);
@@ -78,12 +85,6 @@ function handleRequest(e) {
         break;
       case 'bulk':
         result = handleBulk(e);
-        break;
-      case 'ahToken':
-        result = handleAHToken(e);
-        break;
-      case 'ahSearch':
-        result = handleAHSearch(e);
         break;
       default:
         result = { ok: false, error: 'Unknown action' };
