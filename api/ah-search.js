@@ -34,7 +34,10 @@ export default async function handler(req, res) {
     const response = await fetchFn(`https://api.ah.nl/mobile-services/product/search/v2?${params.toString()}`, {
       method: 'GET',
       headers: {
-        'Authorization': `Bearer ${token}`
+        'Authorization': `Bearer ${token}`,
+        'x-application': 'AHWEBSHOP',
+        'x-client-name': 'appie-ios',
+        'x-client-version': '9.28'
       }
     });
 
